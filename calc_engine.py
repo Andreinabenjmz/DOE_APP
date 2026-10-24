@@ -307,14 +307,10 @@ def _gen_main_effects(R, spec):
 
 def _gen_interactions(R):
     es_fb = False
-    if R['via'] == VIA_3:
-        sig = [n for n,e in R['effects'].items() if e.get('activo') and len(n.split('*'))==2]
-    else:
-        sig = [n for n,e in R['effects'].items() if e.get('p',1)<0.05 and len(n.split('*'))==2]
-    if not sig:
-        dos = [n for n in R['effects'] if len(n.split('*'))==2]
-        if dos: sig = [max(dos, key=lambda n: abs(R['effects'][n]['efecto']))]; es_fb = True
+    # Graficar TODAS las interacciones dobles que esten en el modelo actual
+    sig = [n for n in R['effects'] if len(n.split('*'))==2]
     if not sig: return None
+
     fig, axes = plt.subplots(1, len(sig), figsize=(5*len(sig), 4))
     if len(sig) == 1: axes = [axes]
     for ax, name in zip(axes, sig):
@@ -407,44 +403,16 @@ def _gen_curvatura(R):
 def _gen_spec(df, R, spec):
     cond = df.groupby(R['factores'])['Y'].mean().reset_index()
     lo = spec['target'] - spec['tol']; hi = spec['target'] + spec['tol']
-    
-    # Grafico mas ancho para que quepan las etiquetas
-    fig, ax = plt.subplots(figsize=(14, 6))
+    fig, ax = plt.subplots(figsize=(10,5))
     cols = ['green' if lo<=v<=hi else 'red' for v in cond['Y']]
-    bars = ax.bar(range(len(cond)), cond['Y'], color=cols, edgecolor='black')
-    
-    # Etiquetas con los valores de los factores
-    labels = []
-    for _, row in cond.iterrows():
-        partes = []
-        for f in R['factores']:
-            v = row[f]
-            if v == -1:
-                partes.append(f"{f}: -1")
-            elif v == 1:
-                partes.append(f"{f}: +1")
-            else:
-                partes.append(f"{f}: 0")
-        labels.append("\n".join(partes))
-    
-    ax.axhline(spec['target'], color='green', linestyle='--', 
-               label=f"Objetivo {spec['target']}")
-    ax.axhspan(lo, hi, alpha=0.15, color='green', 
-               label=f"Spec [{lo}, {hi}]")
-    
+    ax.bar(range(len(cond)), cond['Y'], color=cols, edgecolor='black')
+    ax.axhline(spec['target'], color='green', linestyle='--', label=f"Objetivo {spec['target']}")
+    ax.axhspan(lo, hi, alpha=0.15, color='green', label=f"Spec [{lo},{hi}]")
     ax.set_xticks(range(len(cond)))
-    ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=9)
-    ax.set_ylabel('Media de Y')
-    ax.set_title('Medias por condicion vs Spec')
-    ax.legend(loc='upper right')
-    
-    # Anotar el valor de cada barra encima
-    for i, v in enumerate(cond['Y']):
-        ax.text(i, v + 0.3, f'{v:.2f}', ha='center', fontsize=8)
-    
-    plt.tight_layout()
-    fn = 'especificacion.png'
-    plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
+    ax.set_xticklabels([f'C{i+1}' for i in range(len(cond))], rotation=45)
+    ax.set_ylabel('Media'); ax.set_title('Medias vs Spec')
+    ax.legend(); plt.tight_layout()
+    fn = 'especificacion.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
 
 # ---------- Ecuacion ----------
 def _ecuacion_str(R):
