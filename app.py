@@ -321,34 +321,56 @@ elif st.session_state.stage == 'refine':
     R_full = st.session_state.R_full
     all_terms = list(R_full['effects'].keys())
 
+
     st.markdown("### Terminos disponibles")
     selected = []
     for term in all_terms:
         e = R_full['effects'][term]
         c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
-        checked = c1.checkbox(term, value=True, key=f"chk_{term}")
+        
+        # Arreglo visual: reemplazar * por x para que Streamlit no lo ponga en cursiva
+        display_term = term.replace('*', ' x ')
+        
+        if via == ce.VIA_3:
+            # En Via 3 Lenth decide solo, mostramos texto en vez de checkbox
+            activo = e.get('activo', False)
+            c1.write(f"{'[ACTIVO]' if activo else '[RUIDO]'} {display_term}")
+            if activo: selected.append(term)
+        else:
+            checked = c1.checkbox(display_term, value=True, key=f"chk_{term}")
+            if checked: selected.append(term)
+                
         c2.write(f"Efecto: {e['efecto']:+.4f}")
+        
         p_val = e.get('p')
-        c3.write(f"p={p_val:.4f}" if pd.notna(p_val) else "p=-")
-        if checked: selected.append(term)
+        if via == ce.VIA_3:
+            c3.write(f"p={p_val:.4f}" if pd.notna(p_val) else "p=Pooled")
+        else:
+            c3.write(f"p={p_val:.4f}" if pd.notna(p_val) else "p=-")
 
     if len(selected) == 0:
         st.warning("Selecciona al menos 1 termino.")
     else:
-        if st.button("Re-calcular con terminos seleccionados", type='primary'):
-            with st.spinner("Ajustando modelo reducido..."):
-                try:
-                    if via == ce.VIA_1:
-                        R_red = ce.calcular_via1_con_terminos(df, factores, terms=selected)
-                    elif via == ce.VIA_2:
-                        R_red = ce.calcular_via2_con_terminos(df, factores, terms=selected)
-                    else:
-                        R_red = R_full
-                    st.session_state.R_reduced = R_red
-                    st.session_state.selected_terms = selected
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
+        if via == ce.VIA_3:
+            st.info("En Via 3, el metodo de Lenth ya selecciono automaticamente los terminos activos.")
+            if st.button("Continuar al Diagnostico", type='primary'):
+                st.session_state.R_reduced = R_full
+                st.session_state.selected_terms = selected
+                st.session_state.stage = 'diagnostics'
+                st.rerun()
+        else:
+            if st.button("Re-calcular con terminos seleccionados", type='primary'):
+                with st.spinner("Ajustando modelo reducido..."):
+                    try:
+                        if via == ce.VIA_1:
+                            R_red = ce.calcular_via1_con_terminos(df, factores, terms=selected)
+                        elif via == ce.VIA_2:
+                            R_red = ce.calcular_via2_con_terminos(df, factores, terms=selected)
+                        st.session_state.R_reduced = R_red
+                        st.session_state.selected_terms = selected
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
     if st.session_state.R_reduced is not None:
         R_red = st.session_state.R_reduced
