@@ -390,31 +390,73 @@ elif st.session_state.stage == 'diagnostics':
     df = st.session_state.df
     R = st.session_state.R_reduced if st.session_state.R_reduced else st.session_state.R_full
 
-    st.markdown("### Residuales")
+    st.markdown("### 1. Diagnostico de Residuales")
     st.markdown("""
-    - (a) **Normalidad**: puntos sobre la diagonal
-    - (b) **Homocedasticidad**: nube uniforme (no embudo)
-    - (c) **Independencia**: sin tendencia con el orden
+    Los residuales son lo que el modelo **no** puede explicar. Para que el ANOVA sea confiable, deben cumplir 3 reglas:
+    - **(a) Normalidad**: En el primer gráfico, los puntos deben seguir la línea diagonal recta. Si se despegan en los extremos (forma de S), la normalidad falla.
+    - **(b) Homocedasticidad (Varianza constante)**: En el segundo gráfico, la nube de puntos debe ser pareja. Si se abre en forma de embudo o trompeta, la varianza no es constante.
+    - **(c) Independencia**: En el tercer gráfico, no debe haber tendencias (curvas, líneas rectas). Los puntos deben estar dispersos al azar.
     """)
     st.image(ce._gen_residuales(df, R), use_container_width=True)
+    with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
+        st.markdown("""
+        - ¿Los puntos del gráfico (a) se pegan a la línea roja? 
+        - ¿La nube del gráfico (b) tiene forma de embudo o es pareja?
+        - ¿Ves alguna tendencia en el gráfico (c)?
+        - **Conclusión:** ¿Se cumplen los supuestos? (Si sí, los p-valores del ANOVA son 100% confiables).
+        """)
 
-    st.markdown("### Efectos principales")
+    st.markdown("### 2. Efectos Principales")
+    st.markdown("""
+    Muestra cómo cambia la media de la respuesta (Y) cuando el factor pasa de su nivel bajo (-1) a su nivel alto (+1).
+    - Si la línea **sube**, el efecto es positivo.
+    - Si la línea **baja**, el efecto es negativo.
+    - Si la línea es **plana**, el factor casi no afecta al proceso.
+    """)
     st.image(ce._gen_main_effects(R, st.session_state.spec), use_container_width=True)
+    with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
+        st.markdown("""
+        - ¿Cuál es el gráfico con la pendiente más pronunciada? (Ese es el factor dominante).
+        - ¿Los signos de las pendientes coinciden con los efectos que viste en el Pareto?
+        - Si hay una especificación (banda verde), ¿qué niveles del factor te mantienen dentro de la spec?
+        """)
 
-    st.markdown("### Interacciones")
+    st.markdown("### 3. Interacciones")
+    st.markdown("""
+    Muestra si el efecto de un factor **depende** del nivel de otro factor.
+    - Líneas **paralelas**: No hay interacción (los factores actúan de forma independiente).
+    - Líneas que **se cruzan**: Interacción antagónica (el efecto de uno se invierte si cambias el nivel del otro).
+    - Líneas que **se separan**: Interacción sinérgica (los efectos se potencian).
+    """)
     fn_int = ce._gen_interactions(R)
     if fn_int:
         st.image(fn_int, use_container_width=True)
     else:
         st.info("Ninguna interaccion significativa en el modelo.")
+    with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
+        st.markdown("""
+        - ¿Las líneas son paralelas o no?
+        - Si se cruzan, ¿en qué punto sucede? ¿Qué implicación práctica tiene?
+        - ¿Conviene usar el mismo nivel del factor 2 sin importar el nivel del factor 1?
+        """)
 
     if st.session_state.spec:
-        st.markdown("### Cumplimiento de especificacion")
+        st.markdown("### 4. Cumplimiento de Especificacion")
+        st.markdown("""
+        Muestra qué combinaciones cumplen con la meta (banda verde). Verde = cumple, Rojo = no cumple.
+        """)
         st.image(ce._gen_spec(df, R, st.session_state.spec), use_container_width=True)
+        with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
+            st.markdown("""
+            - ¿Cuántas barras son verdes?
+            - ¿Qué combinación de niveles comparten todas las barras rojas?
+            - ¿El centro (0,0,0) cumple con la especificación?
+            """)
 
+    st.markdown("---")
     c1, c2 = st.columns(2)
     if c1.button("Volver a Refinar"): st.session_state.stage = 'refine'; st.rerun()
-    if c2.button("Reporte final", type='primary'):
+    if c2.button("Avanzar al Reporte Final", type='primary'):
         st.session_state.stage = 'report'; st.rerun()
 
 elif st.session_state.stage == 'report':
@@ -424,14 +466,37 @@ elif st.session_state.stage == 'report':
     nombre = st.session_state.nombre
     slug = nombre.replace(' ', '_').replace('/', '-')
 
-    st.markdown("### Ecuacion de regresion")
-    st.write(f"beta0 = media global = {R['y_bar']:.4f}")
+    st.markdown("### 1. Ecuacion de Regresion")
+    st.write(f"**Beta 0 (Media global / Intercepto)** = {R['y_bar']:.4f}")
+    
     eq = ce._ecuacion_str(R)
-    if eq: st.code(eq, language=None)
-    else: st.info("Ningun termino significativo.")
+    if eq: 
+        st.code(eq, language=None)
+    else: 
+        st.info("Ningun termino significativo. La ecuacion es solo la media (Beta 0).")
 
-    if st.button("Generar archivos de descarga", type='primary'):
-        with st.spinner("Generando Excel, Word y graficos..."):
+    st.markdown("""
+    #### Cómo interpretar esta ecuación (¡Muy importante para el informe!)
+    Esta fórmula te permite **predecir** el valor de Y para cualquier combinación de niveles (-1 o +1).
+    
+    - **Beta 0 (Intercepto):** Es el valor promedio de Y cuando todos los factores están en 0 (el centro del diseño).
+    - **El signo (+ / -):** Indica la dirección. Si el coeficiente de `Temperatura` es `+13.10`, significa que al subir la temperatura de -1 a +1, la respuesta **sube** 13.10 unidades.
+    - **La magnitud:** Un número más grande (ignorando el signo) indica un factor con mayor impacto en el proceso.
+    - **Términos de interacción (ej. A x B):** Significa que el efecto de A no es constante, sino que cambia dependiendo del nivel de B.
+    
+    *Ejemplo de uso:* Si sustituyes los factores por -1 o +1 y haces la suma, obtienes el Y predicho para esa condición.
+    """)
+    
+    with st.expander("🤔 Preguntas de reflexión para tu informe"):
+        st.markdown("""
+        - ¿Los signos de los coeficientes de la ecuación coinciden con lo que viste en los efectos principales?
+        - Si tuvieras que recomendar una configuración para maximizar (o minimizar) Y, ¿qué valores (-1 o +1) le darías a los factores con coeficientes positivos y negativos?
+        - ¿Cómo usarías esta ecuación en la práctica industrial o biológica?
+        """)
+
+    st.markdown("### 2. Generar Archivos")
+    if st.button("Generar descargas (Excel, Word, PNGs)", type='primary'):
+        with st.spinner("Generando archivos..."):
             tablas = {'ANOVA': R['anova']}
             Rf = st.session_state.R_full
             if Rf:
@@ -461,8 +526,10 @@ elif st.session_state.stage == 'report':
             doc.add_paragraph(f"{', '.join(st.session_state.selected_terms or list(R['effects'].keys()))}")
             doc.add_heading("2.2. ANOVA", level=2)
             doc.add_paragraph("[Pega la tabla ANOVA del Excel]")
-            doc.add_heading("2.3. Interpretacion", level=2)
-            doc.add_paragraph("[Explica que terminos son significativos y por que]")
+            doc.add_heading("2.3. Ecuacion de regresion", level=2)
+            doc.add_paragraph(f"Beta 0 = {R['y_bar']:.4f}")
+            if eq: doc.add_paragraph(eq)
+            doc.add_paragraph("[Interpreta los coeficientes aqui]")
             doc.add_heading("2.4. Diagnostico", level=2)
             doc.add_paragraph("[Analiza los 3 supuestos]")
             doc.add_heading("3. Conclusiones", level=1)
@@ -494,10 +561,10 @@ elif st.session_state.stage == 'report':
         st.success("Archivos listos")
 
     if st.session_state.excel_bytes:
-        st.download_button("Tablas (Excel)", st.session_state.excel_bytes,
+        st.download_button("Descargar Tablas (Excel)", st.session_state.excel_bytes,
                            file_name=f'{slug}_tablas.xlsx',
                            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        st.download_button("Plantilla de informe (Word)", st.session_state.word_bytes,
+        st.download_button("Descargar Plantilla de informe (Word)", st.session_state.word_bytes,
                            file_name=f'{slug}_plantilla.docx',
                            mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
         buf_zip = io.BytesIO()
@@ -507,7 +574,7 @@ elif st.session_state.stage == 'report':
             for name, fn in st.session_state.figs_dict.items():
                 if fn and os.path.exists(fn):
                     z.write(fn, arcname=os.path.basename(fn))
-        st.download_button("Todo en ZIP", buf_zip.getvalue(),
+        st.download_button("Descargar Todo en ZIP", buf_zip.getvalue(),
                            file_name=f'{slug}_analisis.zip', mime='application/zip')
 
     c1, c2 = st.columns(2)
