@@ -89,8 +89,6 @@ with st.sidebar:
     if st.session_state.raw is not None:
         raw = st.session_state.raw
         st.markdown("### Columnas")
-        
-        # Usar deteccion inteligente
         fact_cands, resp_cands, _ = _detectar_columnas(raw)
 
         cols = st.multiselect("Factores", raw.columns.tolist(), default=fact_cands)
@@ -117,7 +115,7 @@ with st.sidebar:
             try:
                 rp = raw.copy()
                 for f in cols:
-                    vals = list(dict.fromkeys(rp[f].dropna().tolist())) # Orden de aparicion
+                    vals = list(dict.fromkeys(rp[f].dropna().tolist()))
                     if set(vals).issubset({-1,0,1,-1.0,0.0,1.0}): continue
                     if len(vals) != 2:
                         raise ValueError(f"Columna '{f}' tiene {len(vals)} niveles")
@@ -225,16 +223,20 @@ elif st.session_state.stage == 'full_model':
 
     st.markdown("### 1. Tabla ANOVA")
     st.markdown("""
-    Esta tabla compara la variacion de cada factor contra el ruido.
-    - **SS (Suma de Cuadrados):** Variacion que explica el termino.
-    - **GL (Grados de Libertad):** Informacion independiente (normalmente 1).
-    - **MS (Cuadrado Medio):** SS / GL.
-    - **F:** MS del termino / MS del Error. Si F es grande, el efecto es real.
-    - **p (Valor p):** Si es < 0.05, el termino es significativo (✅).
+    Esta tabla es el **corazón del análisis**. Compara la variación que produce cada factor (la "señal") contra el ruido del experimento.
+    
+    **¿Cómo leer las columnas?**
+    - **SS (Suma de Cuadrados):** La cantidad de variación que explica ese término. Números más grandes = mayor efecto.
+    - **GL (Grados de Libertad):** Cuánta información independiente tiene ese término (para factores en 2^k, siempre es 1).
+    - **MS (Cuadrado Medio):** Es la división de SS entre GL. Es la varianza promedio.
+    - **F (Estadístico F):** Es la división de MS del término entre MS del Error. Si F es grande, el efecto es real y no puro ruido.
+    - **p (Valor p):** La probabilidad de que ese efecto sea solo ruido. **Si p < 0.05, el término es estadísticamente significativo** (lo marcamos con ✅).
     """)
+    
     st.dataframe(R['anova'].round(4), use_container_width=True)
+    
     st.write(f"**R2 = {R['R2']:.4f}**" + (f" | **R2 ajustado = {R['R2_adj']:.4f}**" if R.get('R2_adj') else ""))
-    st.caption("El R2 indica que porcentaje de la variabilidad explica el modelo. > 0.80 suele ser bueno.")
+    st.caption("💡 **El R2** (de 0 a 1) indica qué porcentaje de la variabilidad total del proceso está explicada por el modelo. Un R2 mayor a 0.80 suele ser muy bueno.")
 
     st.markdown("### 2. Diagrama de Pareto")
     st.image(ce._gen_pareto(R), use_container_width=True)
@@ -319,11 +321,18 @@ elif st.session_state.stage == 'refine':
         R_red = st.session_state.R_reduced
         st.markdown("### 2. ANOVA del modelo reducido (Final)")
         st.markdown("""
-        Al quitar el ruido, su variabilidad pasa al **Residual**. Los Grados de Libertad del error aumentan y el modelo se vuelve mas preciso (el R2 ajustado suele subir).
+        Este es el ANOVA final, una vez que has eliminado el ruido. 
+        
+        **¿Qué cambió respecto al modelo completo?**
+        - Al quitar los términos no significativos, su variabilidad (SS y GL) pasa a formar parte del **Residual** (o del **Error pooled** si es Vía 3).
+        - Ahora los Grados de Libertad del error son más grandes, lo que hace que el análisis sea **más sensible** para detectar los efectos verdaderos.
+        - El **R2 ajustado** suele subir, porque el modelo es más simple y preciso.
         """)
+        
         st.dataframe(R_red['anova'].round(4), use_container_width=True)
+        
         st.write(f"**R2 = {R_red['R2']:.4f}**" + (f" | **R2 ajustado = {R_red['R2_adj']:.4f}**" if R_red.get('R2_adj') else ""))
-
+        
         # --- INICIO EXTRA OPCIONAL: Intervalos de Confianza ---
         with st.expander("🔬 Opcional (Nivel Avanzado): Coeficientes con Intervalos de Confianza"):
             st.markdown("""
@@ -358,7 +367,7 @@ elif st.session_state.stage == 'refine':
                 })
             st.dataframe(pd.DataFrame(coef_data), use_container_width=True)
         # --- FIN EXTRA OPCIONAL ---
-        
+
         with st.expander("🤔 Preguntas de reflexion para tu informe"):
             st.markdown("""
             - ¿Todos los terminos que dejaste siguen siendo significativos (p < 0.05)?
@@ -376,39 +385,72 @@ elif st.session_state.stage == 'diagnostics':
     df = st.session_state.df
     R = st.session_state.R_reduced if st.session_state.R_reduced else st.session_state.R_full
 
-    st.markdown("### 1. Residuales")
+    st.markdown("### 1. Diagnostico de Residuales")
     st.markdown("""
-    - **(a) Normalidad:** puntos sobre la linea recta.
-    - **(b) Homocedasticidad:** nube uniforme (sin forma de embudo).
-    - **(c) Independencia:** puntos al azar (sin curvas).
+    Los residuales son lo que el modelo **no** puede explicar. Para que el ANOVA sea confiable, deben cumplir 3 reglas:
+    - **(a) Normalidad**: En el primer gráfico, los puntos deben seguir la línea diagonal recta. Si se despegan en los extremos (forma de S), la normalidad falla.
+    - **(b) Homocedasticidad (Varianza constante)**: En el segundo gráfico, la nube de puntos debe ser pareja. Si se abre en forma de embudo o trompeta, la varianza no es constante.
+    - **(c) Independencia**: En el tercer gráfico, no debe haber tendencias (curvas, líneas rectas). Los puntos deben estar dispersos al azar.
     """)
     st.image(ce._gen_residuales(df, R), use_container_width=True)
-    with st.expander("🤔 Preguntas de reflexion (toma notas)"):
-        st.markdown("- ¿Se cumplen los 3 supuestos? Si si, los p-valores del ANOVA son confiables.")
+    with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
+        st.markdown("""
+        - ¿Los puntos del gráfico (a) se pegan a la línea roja? 
+        - ¿La nube del gráfico (b) tiene forma de embudo o es pareja?
+        - ¿Ves alguna tendencia en el gráfico (c)?
+        - **Conclusión:** ¿Se cumplen los supuestos? (Si sí, los p-valores del ANOVA son 100% confiables).
+        """)
 
-    st.markdown("### 2. Efectos principales")
+    st.markdown("### 2. Efectos Principales")
+    st.markdown("""
+    Muestra cómo cambia la media de la respuesta (Y) cuando el factor pasa de su nivel bajo (-1) a su nivel alto (+1).
+    - Si la línea **sube**, el efecto es positivo.
+    - Si la línea **baja**, el efecto es negativo.
+    - Si la línea es **plana**, el factor casi no afecta al proceso.
+    """)
     st.image(ce._gen_main_effects(R, st.session_state.spec), use_container_width=True)
-    with st.expander("🤔 Preguntas de reflexion"):
-        st.markdown("- ¿Cual es la linea mas empinada? ¿Los signos coinciden con el Pareto?")
+    with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
+        st.markdown("""
+        - ¿Cuál es el gráfico con la pendiente más pronunciada? (Ese es el factor dominante).
+        - ¿Los signos de las pendientes coinciden con los efectos que viste en el Pareto?
+        - Si hay una especificación (banda verde), ¿qué niveles del factor te mantienen dentro de la spec?
+        """)
 
     st.markdown("### 3. Interacciones")
+    st.markdown("""
+    Muestra si el efecto de un factor **depende** del nivel de otro factor.
+    - Líneas **paralelas**: No hay interacción (los factores actúan de forma independiente).
+    - Líneas que **se cruzan**: Interacción antagónica (el efecto de uno se invierte si cambias el nivel del otro).
+    - Líneas que **se separan**: Interacción sinérgica (los efectos se potencian).
+    """)
     fn_int = ce._gen_interactions(R)
     if fn_int:
         st.image(fn_int, use_container_width=True)
-        with st.expander("🤔 Preguntas de reflexion"):
-            st.markdown("- ¿Las lineas son paralelas? ¿Se cruzan (antagonica) o se separan (sinergica)?")
     else:
         st.info("Ninguna interaccion significativa en el modelo.")
+    with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
+        st.markdown("""
+        - ¿Las líneas son paralelas o no?
+        - Si se cruzan, ¿en qué punto sucede? ¿Qué implicación práctica tiene?
+        - ¿Conviene usar el mismo nivel del factor 2 sin importar el nivel del factor 1?
+        """)
 
     if st.session_state.spec:
-        st.markdown("### 4. Cumplimiento de especificacion")
+        st.markdown("### 4. Cumplimiento de Especificacion")
+        st.markdown("""
+        Muestra qué combinaciones cumplen con la meta (banda verde). Verde = cumple, Rojo = no cumple.
+        """)
         st.image(ce._gen_spec(df, R, st.session_state.spec), use_container_width=True)
-        with st.expander("🤔 Preguntas de reflexion"):
-            st.markdown("- ¿Que combinacion de niveles comparten las barras rojas (fuera de spec)?")
+        with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
+            st.markdown("""
+            - ¿Cuántas barras son verdes?
+            - ¿Qué combinación de niveles comparten todas las barras rojas?
+            - ¿El centro (0,0,0) cumple con la especificación?
+            """)
 
     c1, c2 = st.columns(2)
     if c1.button("Volver a Refinar"): st.session_state.stage = 'refine'; st.rerun()
-    if c2.button("Reporte final", type='primary'):
+    if c2.button("Avanzar al Reporte Final", type='primary'):
         st.session_state.stage = 'report'; st.rerun()
 
 elif st.session_state.stage == 'report':
@@ -419,24 +461,30 @@ elif st.session_state.stage == 'report':
     slug = nombre.replace(' ', '_').replace('/', '-')
 
     st.markdown("### 1. Ecuacion de Regresion")
-    st.write(f"**Beta 0 (Media global)** = {R['y_bar']:.4f}")
+    st.write(f"**Beta 0 (Media global / Intercepto)** = {R['y_bar']:.4f}")
     eq = ce._ecuacion_str(R)
     if eq: 
         st.code(eq, language=None)
     else: 
-        st.info("Ningun termino significativo. La ecuacion es la media global.")
+        st.info("Ningun termino significativo. La ecuacion es solo la media (Beta 0).")
 
     st.markdown("""
-    **Como interpretar la ecuacion:**
-    - **Beta 0:** Valor de Y cuando todos los factores estan en 0 (centro).
-    - **Signo (+/-):** Direccion del efecto. Positivo = al subir el factor, Y sube.
-    - **Magnitud:** Un coeficiente mas grande indica mayor impacto.
+    #### Cómo interpretar esta ecuación (¡Muy importante para el informe!)
+    Esta fórmula te permite **predecir** el valor de Y para cualquier combinación de niveles (-1 o +1).
+    
+    - **Beta 0 (Intercepto):** Es el valor promedio de Y cuando todos los factores están en 0 (el centro del diseño).
+    - **El signo (+ / -):** Indica la dirección. Si el coeficiente de `Temperatura` es `+13.10`, significa que al subir la temperatura de -1 a +1, la respuesta **sube** 13.10 unidades.
+    - **La magnitud:** Un número más grande (ignorando el signo) indica un factor con mayor impacto en el proceso.
+    - **Términos de interacción (ej. A x B):** Significa que el efecto de A no es constante, sino que cambia dependiendo del nivel de B.
+    
+    *Ejemplo de uso:* Si sustituyes los factores por -1 o +1 y haces la suma, obtienes el Y predicho para esa condición.
     """)
     
-    with st.expander("🤔 Preguntas de reflexion para tu informe"):
+    with st.expander("🤔 Preguntas de reflexión para tu informe"):
         st.markdown("""
-        - ¿Los signos coinciden con los efectos principales?
-        - Para maximizar (o minimizar) Y, ¿que niveles (-1 o +1) elegirias para cada factor?
+        - ¿Los signos de los coeficientes de la ecuación coinciden con lo que viste en los efectos principales?
+        - Si tuvieras que recomendar una configuración para maximizar (o minimizar) Y, ¿qué valores (-1 o +1) le darías a los factores con coeficientes positivos y negativos?
+        - ¿Cómo usarías esta ecuación en la práctica industrial o biológica?
         """)
 
     st.markdown("### 2. Generar Archivos")
@@ -471,8 +519,10 @@ elif st.session_state.stage == 'report':
             doc.add_paragraph(f"{', '.join(st.session_state.selected_terms or list(R['effects'].keys()))}")
             doc.add_heading("2.2. ANOVA", level=2)
             doc.add_paragraph("[Pega la tabla ANOVA del Excel]")
-            doc.add_heading("2.3. Interpretacion", level=2)
-            doc.add_paragraph("[Explica que terminos son significativos y por que]")
+            doc.add_heading("2.3. Ecuacion de regresion", level=2)
+            doc.add_paragraph(f"Beta 0 = {R['y_bar']:.4f}")
+            if eq: doc.add_paragraph(eq)
+            doc.add_paragraph("[Interpreta los coeficientes aqui]")
             doc.add_heading("2.4. Diagnostico", level=2)
             doc.add_paragraph("[Analiza los 3 supuestos]")
             doc.add_heading("3. Conclusiones", level=1)
