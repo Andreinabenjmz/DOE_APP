@@ -252,9 +252,31 @@ elif st.session_state.stage == 'full_model':
             st.session_state.R_full = R
     R = st.session_state.R_full
 
-    st.markdown("### ANOVA")
+    st.markdown("### 1. Tabla ANOVA")
+    st.markdown("""
+    Esta tabla es el corazón del análisis. Compara la variación que produce cada factor (la "señal") contra el ruido del experimento.
+    
+    **¿Cómo leer las columnas?**
+    - **SS (Suma de Cuadrados):** La cantidad de variación que explica ese término. Números más grandes = mayor efecto.
+    - **GL (Grados de Libertad):** Cuánta información independiente tiene ese término (para factores en \(2^k\), siempre es 1).
+    - **MS (Cuadrado Medio):** Es la división de SS entre GL. Es la varianza promedio.
+    - **F (Estadístico F):** Es la división de MS del término entre MS del Error. Si F es grande, el efecto es real y no puro ruido.
+    - **p (Valor p):** La probabilidad de que ese efecto sea solo ruido. **Si p < 0.05, el término es estadísticamente significativo** (lo marcamos con ✅).
+    """)
+    
     st.dataframe(R['anova'].round(4), use_container_width=True)
-    st.write(f"R2 = {R['R2']:.4f}" + (f" - R2 adj = {R['R2_adj']:.4f}" if R.get('R2_adj') else ""))
+    
+    st.write(f"**R² = {R['R2']:.4f}**" + (f" | **R² ajustado = {R['R2_adj']:.4f}**" if R.get('R2_adj') else ""))
+    st.caption("💡 **El R²** (de 0 a 1) indica qué porcentaje de la variabilidad total del proceso está explicada por el modelo. Un R² mayor a 0.80 suele ser muy bueno.")
+
+    with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
+        st.markdown("""
+        - ¿Qué término tiene el valor **F** más grande?
+        - ¿Cuántas filas tienen un **p-valor** menor a 0.05 (es decir, tienen ✅ en la columna Sig.)?
+        - Mire la fila de **Residual** o **Error**. ¿Cuántos grados de libertad (GL) tiene?
+        - Con ese R², ¿sientes que el modelo explica bien el proceso o falta información?
+        """)
+
 
     st.markdown("### Diagrama de Pareto")
     st.image(ce._gen_pareto(R), use_container_width=True)
