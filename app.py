@@ -396,11 +396,30 @@ elif st.session_state.stage == 'refine':
 
     if st.session_state.R_reduced is not None:
         R_red = st.session_state.R_reduced
-        st.markdown("### ANOVA del modelo reducido")
+        st.markdown("### 2. ANOVA del modelo reducido (Final)")
+        st.markdown("""
+        Este es el ANOVA final, una vez que has eliminado el ruido. 
+        
+        **¿Qué cambió respecto al modelo completo?**
+        - Al quitar los términos no significativos, su variabilidad (SS y GL) pasa a formar parte del **Residual** (o del **Error pooled** si es Vía 3).
+        - Ahora los Grados de Libertad del error son más grandes, lo que hace que el análisis sea **más sensible** para detectar los efectos verdaderos.
+        - El **R² ajustado** suele subir, porque el modelo es más simple y preciso.
+        """)
+        
         st.dataframe(R_red['anova'].round(4), use_container_width=True)
-        st.write(f"R2 = {R_red['R2']:.4f}" + (f" - R2 adj = {R_red['R2_adj']:.4f}" if R_red.get('R2_adj') else ""))
+        
+        st.write(f"**R² = {R_red['R2']:.4f}**" + (f" | **R² ajustado = {R_red['R2_adj']:.4f}**" if R_red.get('R2_adj') else ""))
+        
         st.info(f"Terminos incluidos: **{len(st.session_state.selected_terms)}** de {len(all_terms)} originales. "
-                f"Si un termino que era significativo dejo de serlo, probablemente quitaste un termino activo.")
+                f"Si un termino que era significativo dejo de serlo, probablemente quitaste un termino con el que interactuaba.")
+
+        with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
+            st.markdown("""
+            - ¿Todos los términos que dejaste en el modelo siguen siendo significativos (p < 0.05)?
+            - ¿El R² ajustado subió o bajó respecto al modelo completo?
+            - ¿Los Grados de Libertad del Error (Residual o Error pooled) aumentaron?
+            - Si un término perdió significancia, ¿crees que fue porque quitaste una interacción importante?
+            """)
 
     c1, c2 = st.columns(2)
     if c1.button("Volver a Modelo completo"): st.session_state.stage = 'full_model'; st.rerun()
