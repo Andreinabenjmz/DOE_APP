@@ -154,12 +154,24 @@ if st.session_state.stage == 'upload':
     st.title("DOE 2^k - Modo Minitab")
     st.markdown("""
     ### Como funciona
+
     Esta app reproduce el flujo de Minitab para disenos factoriales 2^k:
+
     1. **Diseno** - revisa la estructura
-    2. **Modelo completo** - ANOVA, Pareto, semi-normal
-    3. **Refinar modelo** - TU decides que terminos quitar
-    4. **Diagnostico** - residuales, efectos, interacciones
+    2. **Modelo completo** - ANOVA con todos los terminos, Pareto, semi-normal
+    3. **Refinar modelo** - TU decides que terminos quitar (aqui esta el esfuerzo)
+    4. **Diagnostico** - residuales, efectos principales, interacciones
     5. **Reporte** - descarga tablas, graficos y plantilla Word
+
+    ### ¿En qué se parece a Minitab?
+
+    - **Interpretar** el Pareto y el semi-normal para decidir que terminos son reales
+    - **Seleccionar** terminos en el modelo reducido
+    - **Verificar** que los resultados tengan sentido
+    - **Diagnosticar** los residuales
+    - **Escribir tus conclusiones**
+
+    Al igual que en Minitab, la app te da los numeros, pero las decisiones son tuyas.
     """)
     st.info("Empieza subiendo un archivo en la barra lateral")
 
