@@ -307,7 +307,6 @@ def _gen_main_effects(R, spec):
 
 def _gen_interactions(R):
     es_fb = False
-    # Graficar TODAS las interacciones dobles que esten en el modelo actual
     sig = [n for n in R['effects'] if len(n.split('*'))==2]
     if not sig: return None
 
@@ -403,15 +402,33 @@ def _gen_curvatura(R):
 def _gen_spec(df, R, spec):
     cond = df.groupby(R['factores'])['Y'].mean().reset_index()
     lo = spec['target'] - spec['tol']; hi = spec['target'] + spec['tol']
-    fig, ax = plt.subplots(figsize=(10,5))
+    
+    fig, ax = plt.subplots(figsize=(14, 6))
     cols = ['green' if lo<=v<=hi else 'red' for v in cond['Y']]
-    ax.bar(range(len(cond)), cond['Y'], color=cols, edgecolor='black')
+    bars = ax.bar(range(len(cond)), cond['Y'], color=cols, edgecolor='black')
+    
+    labels = []
+    for _, row in cond.iterrows():
+        partes = []
+        for f in R['factores']:
+            v = row[f]
+            if v == -1: partes.append(f"{f}: -1")
+            elif v == 1: partes.append(f"{f}: +1")
+            else: partes.append(f"{f}: 0")
+        labels.append("\n".join(partes))
+    
     ax.axhline(spec['target'], color='green', linestyle='--', label=f"Objetivo {spec['target']}")
-    ax.axhspan(lo, hi, alpha=0.15, color='green', label=f"Spec [{lo},{hi}]")
+    ax.axhspan(lo, hi, alpha=0.15, color='green', label=f"Spec [{lo}, {hi}]")
+    
     ax.set_xticks(range(len(cond)))
-    ax.set_xticklabels([f'C{i+1}' for i in range(len(cond))], rotation=45)
-    ax.set_ylabel('Media'); ax.set_title('Medias vs Spec')
-    ax.legend(); plt.tight_layout()
+    ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=9)
+    ax.set_ylabel('Media de Y'); ax.set_title('Medias por condicion vs Spec')
+    ax.legend(loc='upper right')
+    
+    for i, v in enumerate(cond['Y']):
+        ax.text(i, v + 0.3, f'{v:.2f}', ha='center', fontsize=8)
+    
+    plt.tight_layout()
     fn = 'especificacion.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
 
 # ---------- Ecuacion ----------

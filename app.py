@@ -12,61 +12,6 @@ from docx import Document
 
 import calc_engine as ce
 
-def _detectar_columnas(raw):
-    """Detecta factores y respuestas de forma inteligente."""
-    factores, respuestas, descartar = [], [], []
-
-    id_names = {'run','corrida','corrida_id','id','n_corrida','numero_corrida',
-                'obs','observacion','index','unnamed: 0'}
-
-    resp_exact = {'y', 'response', 'respuesta', 'resp'}
-    resp_hints = ['rep', 'replica', 'block', 'bloque']
-
-    for c in raw.columns:
-        nombre_lower = str(c).strip().lower()
-        vals = raw[c].dropna().unique().tolist()
-        n_unicos = len(vals)
-
-        # Descartar IDs y constantes
-        if nombre_lower in id_names:
-            descartar.append(c)
-            continue
-        if n_unicos <= 1:
-            descartar.append(c)
-            continue
-
-        # Respuesta por nombre explicito (Rep1, Block 2, Y, etc.)
-        es_resp_hint = (nombre_lower in resp_exact or
-                        any(h in nombre_lower for h in resp_hints))
-        if es_resp_hint and pd.api.types.is_numeric_dtype(raw[c]):
-            respuestas.append(c)
-            continue
-
-        # Factor: exactamente 2 niveles distintos
-        if n_unicos == 2:
-            factores.append(c)
-            continue
-
-        # Factor: 3 niveles que forman {-1, 0, +1} (Via 2 con centro)
-        if n_unicos == 3:
-            try:
-                vals_num = [float(v) for v in vals]
-                if set(vals_num) == {-1.0, 0.0, 1.0}:
-                    factores.append(c)
-                    continue
-            except (ValueError, TypeError):
-                pass
-
-        # Respuesta: numerica con muchos valores
-        if pd.api.types.is_numeric_dtype(raw[c]):
-            respuestas.append(c)
-            continue
-
-        # Fallback: cualquier cosa categorica rara -> factor
-        factores.append(c)
-
-    return factores, respuestas, descartar
-
 st.set_page_config(page_title="DOE 2^k - Modo Minitab", layout="wide")
 
 for k, v in {
@@ -77,6 +22,48 @@ for k, v in {
     'excel_bytes': None, 'word_bytes': None, 'figs_dict': None,
 }.items():
     st.session_state.setdefault(k, v)
+
+# ---------- Deteccion inteligente de columnas ----------
+def _detectar_columnas(raw):
+    factores, respuestas, descartar = [], [], []
+    id_names = {'run','corrida','corrida_id','id','n_corrida','numero_corrida',
+                'obs','observacion','index','unnamed: 0'}
+    resp_exact = {'y', 'response', 'respuesta', 'resp'}
+    resp_hints = ['rep', 'replica', 'block', 'bloque']
+
+    for c in raw.columns:
+        nombre_lower = str(c).strip().lower()
+        vals = raw[c].dropna().unique().tolist()
+        n_unicos = len(vals)
+
+        if nombre_lower in id_names or n_unicos <= 1:
+            descartar.append(c)
+            continue
+
+        es_resp_hint = (nombre_lower in resp_exact or any(h in nombre_lower for h in resp_hints))
+        if es_resp_hint and pd.api.types.is_numeric_dtype(raw[c]):
+            respuestas.append(c)
+            continue
+
+        if n_unicos == 2:
+            factores.append(c)
+            continue
+
+        if n_unicos == 3:
+            try:
+                vals_num = [float(v) for v in vals]
+                if set(vals_num) == {-1.0, 0.0, 1.0}:
+                    factores.append(c)
+                    continue
+            except (ValueError, TypeError):
+                pass
+
+        if pd.api.types.is_numeric_dtype(raw[c]):
+            respuestas.append(c)
+            continue
+
+        factores.append(c)
+    return factores, respuestas, descartar
 
 # ---------- Sidebar ----------
 with st.sidebar:
@@ -101,15 +88,13 @@ with st.sidebar:
 
     if st.session_state.raw is not None:
         raw = st.session_state.raw
-
-
         st.markdown("### Columnas")
-        fact_cands, resp_cands, descartar = _detectar_columnas(raw)
+        
+        # Usar deteccion inteligente
+        fact_cands, resp_cands, _ = _detectar_columnas(raw)
 
-        cols = st.multiselect("Factores", raw.columns.tolist(),
-                              default=fact_cands)
-        resp = st.multiselect("Respuesta(s)", raw.columns.tolist(),
-                              default=resp_cands)
+        cols = st.multiselect("Factores", raw.columns.tolist(), default=fact_cands)
+        resp = st.multiselect("Respuesta(s)", raw.columns.tolist(), default=resp_cands)
 
         via = st.radio("Via",
                        options=[ce.VIA_1, ce.VIA_2, ce.VIA_3],
@@ -132,7 +117,7 @@ with st.sidebar:
             try:
                 rp = raw.copy()
                 for f in cols:
-                    vals = list(dict.fromkeys(rp[f].dropna().tolist()))
+                    vals = list(dict.fromkeys(rp[f].dropna().tolist())) # Orden de aparicion
                     if set(vals).issubset({-1,0,1,-1.0,0.0,1.0}): continue
                     if len(vals) != 2:
                         raise ValueError(f"Columna '{f}' tiene {len(vals)} niveles")
@@ -169,24 +154,12 @@ if st.session_state.stage == 'upload':
     st.title("DOE 2^k - Modo Minitab")
     st.markdown("""
     ### Como funciona
-
     Esta app reproduce el flujo de Minitab para disenos factoriales 2^k:
-
     1. **Diseno** - revisa la estructura
-    2. **Modelo completo** - ANOVA con todos los terminos, Pareto, semi-normal
-    3. **Refinar modelo** - TU decides que terminos quitar (aqui esta el esfuerzo)
-    4. **Diagnostico** - residuales, efectos principales, interacciones
+    2. **Modelo completo** - ANOVA, Pareto, semi-normal
+    3. **Refinar modelo** - TU decides que terminos quitar
+    4. **Diagnostico** - residuales, efectos, interacciones
     5. **Reporte** - descarga tablas, graficos y plantilla Word
-
-    ### El "esfuerzo Minitab"
-
-    - **Interpretar** el Pareto y el semi-normal para decidir que terminos son reales
-    - **Seleccionar** terminos en el modelo reducido
-    - **Verificar** que los resultados tengan sentido
-    - **Diagnosticar** los residuales
-    - **Escribir tus conclusiones**
-
-    La app te da los numeros. Las decisiones son tuyas.
     """)
     st.info("Empieza subiendo un archivo en la barra lateral")
 
@@ -195,38 +168,25 @@ elif st.session_state.stage == 'design':
     factores = st.session_state.factores
     via = st.session_state.via
     st.title("Paso 1 - Diseno experimental")
-
-    # Calculo de la descomposicion de N segun la via
+    
     n_grupos = df['Grupo'].nunique()
     n_total = len(df)
     n_esquinas = 2 ** len(factores)
-    tiene_centro = df['Curvatura'].sum() > 0
-
     if via == ce.VIA_1:
-        n_bloques = 0
-        n_centros = 0
-        explicacion = (f"N = {n_total} = {n_esquinas} esquinas "
-                       f"x {n_grupos} replicas puras")
+        expl = f"N = {n_total} = {n_esquinas} esquinas x {n_grupos} replicas puras"
     elif via == ce.VIA_2:
-        n_bloques = n_grupos
         n_centros = int(df['Curvatura'].sum() / n_grupos) if n_grupos else 0
-        n_puntos = n_esquinas + n_centros
-        explicacion = (f"N = {n_total} = {n_puntos} puntos "
-                       f"({n_esquinas} esquinas + {n_centros} centro) "
-                       f"x {n_bloques} bloques")
+        expl = f"N = {n_total} = {n_esquinas + n_centros} puntos ({n_esquinas} esquinas + {n_centros} centro) x {n_grupos} bloques"
     else:
-        explicacion = (f"N = {n_total} = {n_esquinas} esquinas "
-                       f"(sin replicas)")
+        expl = f"N = {n_total} = {n_esquinas} esquinas (sin replicas)"
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Factores", len(factores))
     c2.metric("N total", n_total)
-    c3.metric("Bloques" if via == ce.VIA_2 else "Replicas",
-              n_grupos if via != ce.VIA_3 else 1)
+    c3.metric("Bloques" if via == ce.VIA_2 else "Replicas", n_grupos if via != ce.VIA_3 else 1)
     c4.metric("Via", via)
-
-    st.info(f"**De donde viene N:** {explicacion}")
-    st.write(f"Via: **{ce.VIA_INFO[via]['nombre']}**")
+    
+    st.info(f"**De donde viene N:** {expl}")
     cond = df[df['Curvatura']==0][factores].drop_duplicates().reset_index(drop=True)
     cond.insert(0, 'Condicion', range(1, len(cond)+1))
     st.markdown("### Combinaciones del diseno")
@@ -236,7 +196,6 @@ elif st.session_state.stage == 'design':
 
 elif st.session_state.stage == 'full_model':
     st.title("Paso 2 - Modelo completo")
-    st.markdown("Corre el ANOVA con **TODOS** los terminos para ver cuales son grandes.")
     df = st.session_state.df
     factores = st.session_state.factores
     via = st.session_state.via
@@ -254,63 +213,34 @@ elif st.session_state.stage == 'full_model':
 
     st.markdown("### 1. Tabla ANOVA")
     st.markdown("""
-    Esta tabla es el corazón del análisis. Compara la variación que produce cada factor (la "señal") contra el ruido del experimento.
-    
-    **¿Cómo leer las columnas?**
-    - **SS (Suma de Cuadrados):** La cantidad de variación que explica ese término. Números más grandes = mayor efecto.
-    - **GL (Grados de Libertad):** Cuánta información independiente tiene ese término (para factores en \(2^k\), siempre es 1).
-    - **MS (Cuadrado Medio):** Es la división de SS entre GL. Es la varianza promedio.
-    - **F (Estadístico F):** Es la división de MS del término entre MS del Error. Si F es grande, el efecto es real y no puro ruido.
-    - **p (Valor p):** La probabilidad de que ese efecto sea solo ruido. **Si p < 0.05, el término es estadísticamente significativo** (lo marcamos con ✅).
+    Esta tabla compara la variacion de cada factor contra el ruido.
+    - **SS (Suma de Cuadrados):** Variacion que explica el termino.
+    - **GL (Grados de Libertad):** Informacion independiente (normalmente 1).
+    - **MS (Cuadrado Medio):** SS / GL.
+    - **F:** MS del termino / MS del Error. Si F es grande, el efecto es real.
+    - **p (Valor p):** Si es < 0.05, el termino es significativo (✅).
     """)
-    
     st.dataframe(R['anova'].round(4), use_container_width=True)
-    
-    st.write(f"**R² = {R['R2']:.4f}**" + (f" | **R² ajustado = {R['R2_adj']:.4f}**" if R.get('R2_adj') else ""))
-    st.caption("💡 **El R²** (de 0 a 1) indica qué porcentaje de la variabilidad total del proceso está explicada por el modelo. Un R² mayor a 0.80 suele ser muy bueno.")
+    st.write(f"**R2 = {R['R2']:.4f}**" + (f" | **R2 ajustado = {R['R2_adj']:.4f}**" if R.get('R2_adj') else ""))
+    st.caption("El R2 indica que porcentaje de la variabilidad explica el modelo. > 0.80 suele ser bueno.")
 
-    with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
-        st.markdown("""
-        - ¿Qué término tiene el valor **F** más grande?
-        - ¿Cuántas filas tienen un **p-valor** menor a 0.05 (es decir, tienen ✅ en la columna Sig.)?
-        - Mire la fila de **Residual** o **Error**. ¿Cuántos grados de libertad (GL) tiene?
-        - Con ese R², ¿sientes que el modelo explica bien el proceso o falta información?
-        """)
-
-
-    st.markdown("### Diagrama de Pareto")
+    st.markdown("### 2. Diagrama de Pareto")
     st.image(ce._gen_pareto(R), use_container_width=True)
-    st.markdown("### Grafico semi-normal (Lenth)")
+    st.markdown("### 3. Grafico semi-normal (Lenth)")
     st.image(ce._gen_seminormal(R), use_container_width=True)
 
-    st.markdown("### Como leer estos graficos")
-
     st.markdown("""
-    **Diagrama de Pareto (primer grafico)**
-    - La linea vertical roja es el umbral (|t| critico).
-    - Las barras ROJAS cruzan el umbral → terminos con efecto real.
-    - Las barras AZULES no lo cruzan → probablemente ruido.
-    - La barra mas larga (arriba de todo) es el efecto mas importante.
+    ### Como leer estos graficos
+    **Pareto:** Las barras rojas cruzan la linea vertical → son significativas. Las azules no.
+    **Semi-normal:** Los puntos que se DESPEGAN de la linea diagonal son efectos reales. Los que siguen la linea son ruido.
     """)
 
-    st.markdown("""
-    **Grafico semi-normal (segundo grafico)**
-    - Cada punto es un termino del modelo.
-    - Los puntos que siguen la linea diagonal son efectos pequenos = ruido.
-    - Los puntos que se DESPEGAN de la diagonal son efectos grandes = reales.
-    - La linea horizontal roja es el umbral ME. Puntos por encima son activos.
-    """)
-
-    st.markdown("### Que hacer ahora")
-
-    st.markdown("""
-    1. **Cuenta las barras rojas** en el Pareto. Esa es tu primera lista de terminos activos.
-    2. **Verifica en el semi-normal** que esos mismos puntos se despegan de la diagonal.
-    3. **Si ambos metodos coinciden** → alta confianza en esa lista.
-    4. **Si no coinciden** → prioriza el Pareto (es mas conservador) y discute los casos marginales en tus notas.
-
-    Cuando tengas tu lista, presiona **"Refinar modelo"** abajo.
-    """)
+    with st.expander("🤔 Preguntas de reflexion (toma notas para tu informe)"):
+        st.markdown("""
+        - ¿Coinciden las barras rojas del Pareto con los puntos despegados del semi-normal?
+        - ¿Cual es el termino con la barra mas larga?
+        - ¿Hay algun termino que parezca "marginal" (que este justo en el limite)?
+        """)
 
     c1, c2 = st.columns(2)
     if c1.button("Volver a Diseno"): st.session_state.stage = 'design'; st.rerun()
@@ -319,62 +249,41 @@ elif st.session_state.stage == 'full_model':
 
 elif st.session_state.stage == 'refine':
     st.title("Paso 3 - Refinar modelo")
-
     st.markdown("""
-    ### Que hacer en este paso
-
-    Aqui vas a construir el **modelo final** quedandote solo con los terminos activos.
-
-    - **DEJA MARCADOS** los terminos que identificaste como activos en el Pareto/semi-normal.
-    - **DESMARCA** los terminos que eran ruido (barras azules, puntos pegados a la diagonal).
-    - Cuando termines, presiona **"Re-calcular con terminos seleccionados"**.
+    **Aqui construyes el modelo final.** 
+    - **Deja marcados** los terminos que identificaste como activos en el Pareto/semi-normal.
+    - **Desmarca** los terminos ruido.
+    - Luego presiona "Re-calcular".
     """)
-
-    st.info("""
-    **Regla practica para decidir:**
-    - p < 0.05 → casi siempre es activo, dejalo marcado.
-    - p > 0.10 → casi siempre es ruido, desmarcalo.
-    - 0.05 < p < 0.10 → marginal, decision tuya (mira si el Pareto y el semi-normal lo respaldan).
-    """)
-
     df = st.session_state.df
     factores = st.session_state.factores
     via = st.session_state.via
     R_full = st.session_state.R_full
     all_terms = list(R_full['effects'].keys())
 
-
     st.markdown("### Terminos disponibles")
     selected = []
     for term in all_terms:
         e = R_full['effects'][term]
         c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
-        
-        # Arreglo visual: reemplazar * por x para que Streamlit no lo ponga en cursiva
         display_term = term.replace('*', ' x ')
         
         if via == ce.VIA_3:
-            # En Via 3 Lenth decide solo, mostramos texto en vez de checkbox
             activo = e.get('activo', False)
             c1.write(f"{'[ACTIVO]' if activo else '[RUIDO]'} {display_term}")
             if activo: selected.append(term)
         else:
             checked = c1.checkbox(display_term, value=True, key=f"chk_{term}")
             if checked: selected.append(term)
-                
+            
         c2.write(f"Efecto: {e['efecto']:+.4f}")
-        
         p_val = e.get('p')
-        if via == ce.VIA_3:
-            c3.write(f"p={p_val:.4f}" if pd.notna(p_val) else "p=Pooled")
-        else:
-            c3.write(f"p={p_val:.4f}" if pd.notna(p_val) else "p=-")
+        c3.write(f"p={p_val:.4f}" if pd.notna(p_val) else "p=Pooled" if via == ce.VIA_3 else "p=-")
 
     if len(selected) == 0:
         st.warning("Selecciona al menos 1 termino.")
     else:
         if via == ce.VIA_3:
-            st.info("En Via 3, el metodo de Lenth ya selecciono automaticamente los terminos activos.")
             if st.button("Continuar al Diagnostico", type='primary'):
                 st.session_state.R_reduced = R_full
                 st.session_state.selected_terms = selected
@@ -398,27 +307,51 @@ elif st.session_state.stage == 'refine':
         R_red = st.session_state.R_reduced
         st.markdown("### 2. ANOVA del modelo reducido (Final)")
         st.markdown("""
-        Este es el ANOVA final, una vez que has eliminado el ruido. 
-        
-        **¿Qué cambió respecto al modelo completo?**
-        - Al quitar los términos no significativos, su variabilidad (SS y GL) pasa a formar parte del **Residual** (o del **Error pooled** si es Vía 3).
-        - Ahora los Grados de Libertad del error son más grandes, lo que hace que el análisis sea **más sensible** para detectar los efectos verdaderos.
-        - El **R² ajustado** suele subir, porque el modelo es más simple y preciso.
+        Al quitar el ruido, su variabilidad pasa al **Residual**. Los Grados de Libertad del error aumentan y el modelo se vuelve mas preciso (el R2 ajustado suele subir).
         """)
-        
         st.dataframe(R_red['anova'].round(4), use_container_width=True)
-        
-        st.write(f"**R² = {R_red['R2']:.4f}**" + (f" | **R² ajustado = {R_red['R2_adj']:.4f}**" if R_red.get('R2_adj') else ""))
-        
-        st.info(f"Terminos incluidos: **{len(st.session_state.selected_terms)}** de {len(all_terms)} originales. "
-                f"Si un termino que era significativo dejo de serlo, probablemente quitaste un termino con el que interactuaba.")
+        st.write(f"**R2 = {R_red['R2']:.4f}**" + (f" | **R2 ajustado = {R_red['R2_adj']:.4f}**" if R_red.get('R2_adj') else ""))
 
-        with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
+        # --- INICIO EXTRA OPCIONAL: Intervalos de Confianza ---
+        with st.expander("🔬 Opcional (Nivel Avanzado): Coeficientes con Intervalos de Confianza"):
             st.markdown("""
-            - ¿Todos los términos que dejaste en el modelo siguen siendo significativos (p < 0.05)?
-            - ¿El R² ajustado subió o bajó respecto al modelo completo?
-            - ¿Los Grados de Libertad del Error (Residual o Error pooled) aumentaron?
-            - Si un término perdió significancia, ¿crees que fue porque quitaste una interacción importante?
+            Esta tabla muestra el error estándar y el rango donde probablemente se encuentra el verdadero coeficiente.
+            **Si el intervalo NO incluye el cero**, el término es estadísticamente significativo.
+            """)
+            t_crit = R_red.get('t_crit', 2.0)
+            mse = R_red.get('MS_resid', 0)
+            N_total = R_red.get('N', 1)
+            err_est = np.sqrt(mse / N_total) if mse > 0 else 0
+            
+            coef_data = [{
+                'Término': 'Intercepto (β0)', 
+                'Coef': round(R_red['y_bar'], 4), 
+                'Error Est.': round(err_est, 4), 
+                't': np.nan, 
+                'IC 95% Inf': np.nan, 
+                'IC 95% Sup': np.nan
+            }]
+            
+            for term, e in R_red['effects'].items():
+                t_val = e['coef'] / err_est if err_est > 0 else 0
+                ic_inf = e['coef'] - (t_crit * err_est)
+                ic_sup = e['coef'] + (t_crit * err_est)
+                coef_data.append({
+                    'Término': term.replace('*', ' x '),
+                    'Coef': round(e['coef'], 4),
+                    'Error Est.': round(err_est, 4),
+                    't': round(t_val, 2),
+                    'IC 95% Inf': round(ic_inf, 4),
+                    'IC 95% Sup': round(ic_sup, 4)
+                })
+            st.dataframe(pd.DataFrame(coef_data), use_container_width=True)
+        # --- FIN EXTRA OPCIONAL ---
+        
+        with st.expander("🤔 Preguntas de reflexion para tu informe"):
+            st.markdown("""
+            - ¿Todos los terminos que dejaste siguen siendo significativos (p < 0.05)?
+            - ¿El R2 ajustado subio respecto al modelo completo?
+            - Si un termino perdio significancia, ¿quitaste una interaccion importante?
             """)
 
     c1, c2 = st.columns(2)
@@ -431,73 +364,39 @@ elif st.session_state.stage == 'diagnostics':
     df = st.session_state.df
     R = st.session_state.R_reduced if st.session_state.R_reduced else st.session_state.R_full
 
-    st.markdown("### 1. Diagnostico de Residuales")
+    st.markdown("### 1. Residuales")
     st.markdown("""
-    Los residuales son lo que el modelo **no** puede explicar. Para que el ANOVA sea confiable, deben cumplir 3 reglas:
-    - **(a) Normalidad**: En el primer gráfico, los puntos deben seguir la línea diagonal recta. Si se despegan en los extremos (forma de S), la normalidad falla.
-    - **(b) Homocedasticidad (Varianza constante)**: En el segundo gráfico, la nube de puntos debe ser pareja. Si se abre en forma de embudo o trompeta, la varianza no es constante.
-    - **(c) Independencia**: En el tercer gráfico, no debe haber tendencias (curvas, líneas rectas). Los puntos deben estar dispersos al azar.
+    - **(a) Normalidad:** puntos sobre la linea recta.
+    - **(b) Homocedasticidad:** nube uniforme (sin forma de embudo).
+    - **(c) Independencia:** puntos al azar (sin curvas).
     """)
     st.image(ce._gen_residuales(df, R), use_container_width=True)
-    with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
-        st.markdown("""
-        - ¿Los puntos del gráfico (a) se pegan a la línea roja? 
-        - ¿La nube del gráfico (b) tiene forma de embudo o es pareja?
-        - ¿Ves alguna tendencia en el gráfico (c)?
-        - **Conclusión:** ¿Se cumplen los supuestos? (Si sí, los p-valores del ANOVA son 100% confiables).
-        """)
+    with st.expander("🤔 Preguntas de reflexion (toma notas)"):
+        st.markdown("- ¿Se cumplen los 3 supuestos? Si si, los p-valores del ANOVA son confiables.")
 
-    st.markdown("### 2. Efectos Principales")
-    st.markdown("""
-    Muestra cómo cambia la media de la respuesta (Y) cuando el factor pasa de su nivel bajo (-1) a su nivel alto (+1).
-    - Si la línea **sube**, el efecto es positivo.
-    - Si la línea **baja**, el efecto es negativo.
-    - Si la línea es **plana**, el factor casi no afecta al proceso.
-    """)
+    st.markdown("### 2. Efectos principales")
     st.image(ce._gen_main_effects(R, st.session_state.spec), use_container_width=True)
-    with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
-        st.markdown("""
-        - ¿Cuál es el gráfico con la pendiente más pronunciada? (Ese es el factor dominante).
-        - ¿Los signos de las pendientes coinciden con los efectos que viste en el Pareto?
-        - Si hay una especificación (banda verde), ¿qué niveles del factor te mantienen dentro de la spec?
-        """)
+    with st.expander("🤔 Preguntas de reflexion"):
+        st.markdown("- ¿Cual es la linea mas empinada? ¿Los signos coinciden con el Pareto?")
 
     st.markdown("### 3. Interacciones")
-    st.markdown("""
-    Muestra si el efecto de un factor **depende** del nivel de otro factor.
-    - Líneas **paralelas**: No hay interacción (los factores actúan de forma independiente).
-    - Líneas que **se cruzan**: Interacción antagónica (el efecto de uno se invierte si cambias el nivel del otro).
-    - Líneas que **se separan**: Interacción sinérgica (los efectos se potencian).
-    """)
     fn_int = ce._gen_interactions(R)
     if fn_int:
         st.image(fn_int, use_container_width=True)
+        with st.expander("🤔 Preguntas de reflexion"):
+            st.markdown("- ¿Las lineas son paralelas? ¿Se cruzan (antagonica) o se separan (sinergica)?")
     else:
         st.info("Ninguna interaccion significativa en el modelo.")
-    with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
-        st.markdown("""
-        - ¿Las líneas son paralelas o no?
-        - Si se cruzan, ¿en qué punto sucede? ¿Qué implicación práctica tiene?
-        - ¿Conviene usar el mismo nivel del factor 2 sin importar el nivel del factor 1?
-        """)
 
     if st.session_state.spec:
-        st.markdown("### 4. Cumplimiento de Especificacion")
-        st.markdown("""
-        Muestra qué combinaciones cumplen con la meta (banda verde). Verde = cumple, Rojo = no cumple.
-        """)
+        st.markdown("### 4. Cumplimiento de especificacion")
         st.image(ce._gen_spec(df, R, st.session_state.spec), use_container_width=True)
-        with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
-            st.markdown("""
-            - ¿Cuántas barras son verdes?
-            - ¿Qué combinación de niveles comparten todas las barras rojas?
-            - ¿El centro (0,0,0) cumple con la especificación?
-            """)
+        with st.expander("🤔 Preguntas de reflexion"):
+            st.markdown("- ¿Que combinacion de niveles comparten las barras rojas (fuera de spec)?")
 
-    st.markdown("---")
     c1, c2 = st.columns(2)
     if c1.button("Volver a Refinar"): st.session_state.stage = 'refine'; st.rerun()
-    if c2.button("Avanzar al Reporte Final", type='primary'):
+    if c2.button("Reporte final", type='primary'):
         st.session_state.stage = 'report'; st.rerun()
 
 elif st.session_state.stage == 'report':
@@ -508,31 +407,24 @@ elif st.session_state.stage == 'report':
     slug = nombre.replace(' ', '_').replace('/', '-')
 
     st.markdown("### 1. Ecuacion de Regresion")
-    st.write(f"**Beta 0 (Media global / Intercepto)** = {R['y_bar']:.4f}")
-    
+    st.write(f"**Beta 0 (Media global)** = {R['y_bar']:.4f}")
     eq = ce._ecuacion_str(R)
     if eq: 
         st.code(eq, language=None)
     else: 
-        st.info("Ningun termino significativo. La ecuacion es solo la media (Beta 0).")
+        st.info("Ningun termino significativo. La ecuacion es la media global.")
 
     st.markdown("""
-    #### Cómo interpretar esta ecuación (¡Muy importante para el informe!)
-    Esta fórmula te permite **predecir** el valor de Y para cualquier combinación de niveles (-1 o +1).
-    
-    - **Beta 0 (Intercepto):** Es el valor promedio de Y cuando todos los factores están en 0 (el centro del diseño).
-    - **El signo (+ / -):** Indica la dirección. Si el coeficiente de `Temperatura` es `+13.10`, significa que al subir la temperatura de -1 a +1, la respuesta **sube** 13.10 unidades.
-    - **La magnitud:** Un número más grande (ignorando el signo) indica un factor con mayor impacto en el proceso.
-    - **Términos de interacción (ej. A x B):** Significa que el efecto de A no es constante, sino que cambia dependiendo del nivel de B.
-    
-    *Ejemplo de uso:* Si sustituyes los factores por -1 o +1 y haces la suma, obtienes el Y predicho para esa condición.
+    **Como interpretar la ecuacion:**
+    - **Beta 0:** Valor de Y cuando todos los factores estan en 0 (centro).
+    - **Signo (+/-):** Direccion del efecto. Positivo = al subir el factor, Y sube.
+    - **Magnitud:** Un coeficiente mas grande indica mayor impacto.
     """)
     
-    with st.expander("🤔 Preguntas de reflexión para tu informe"):
+    with st.expander("🤔 Preguntas de reflexion para tu informe"):
         st.markdown("""
-        - ¿Los signos de los coeficientes de la ecuación coinciden con lo que viste en los efectos principales?
-        - Si tuvieras que recomendar una configuración para maximizar (o minimizar) Y, ¿qué valores (-1 o +1) le darías a los factores con coeficientes positivos y negativos?
-        - ¿Cómo usarías esta ecuación en la práctica industrial o biológica?
+        - ¿Los signos coinciden con los efectos principales?
+        - Para maximizar (o minimizar) Y, ¿que niveles (-1 o +1) elegirias para cada factor?
         """)
 
     st.markdown("### 2. Generar Archivos")
@@ -567,10 +459,8 @@ elif st.session_state.stage == 'report':
             doc.add_paragraph(f"{', '.join(st.session_state.selected_terms or list(R['effects'].keys()))}")
             doc.add_heading("2.2. ANOVA", level=2)
             doc.add_paragraph("[Pega la tabla ANOVA del Excel]")
-            doc.add_heading("2.3. Ecuacion de regresion", level=2)
-            doc.add_paragraph(f"Beta 0 = {R['y_bar']:.4f}")
-            if eq: doc.add_paragraph(eq)
-            doc.add_paragraph("[Interpreta los coeficientes aqui]")
+            doc.add_heading("2.3. Interpretacion", level=2)
+            doc.add_paragraph("[Explica que terminos son significativos y por que]")
             doc.add_heading("2.4. Diagnostico", level=2)
             doc.add_paragraph("[Analiza los 3 supuestos]")
             doc.add_heading("3. Conclusiones", level=1)
