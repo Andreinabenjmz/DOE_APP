@@ -315,11 +315,16 @@ def _gen_main_effects(R, spec):
     plt.tight_layout()
     fn = 'efectos_principales.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
 
-def _gen_interactions(R):
+
+def _gen_interactions(R, custom_order=None):
     es_fb = False
     sig = [n for n in R['effects'] if len(n.split('*'))==2]
+    
+    # NUEVO: Si el usuario definió un orden personalizado, lo usamos
+    if custom_order and len(custom_order) > 0:
+        sig = custom_order
+        
     if not sig: return []
-
     files = []
     chunk_size = 3 # Máximo 3 gráficos por fila
 

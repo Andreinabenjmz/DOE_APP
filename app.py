@@ -592,13 +592,34 @@ elif st.session_state.stage == 'diagnostics':
     - Líneas que **se separan**: Interacción sinérgica (los efectos se potencian).
     """)
 
-    fns_int = ce._gen_interactions(R)
+    # --- NUEVO: Selector de orden de interacciones ---
+    todas_interacciones = [n for n in R['effects'] if len(n.split('*'))==2]
+    
+    # Solo mostramos el selector si hay interacciones disponibles
+    if todas_interacciones:
+        orden_interacciones = st.multiselect(
+            "🛠️ Selecciona y ordena las interacciones a graficar (el orden de selección será el orden de los gráficos):",
+            options=todas_interacciones,
+            default=todas_interacciones, # Por defecto las selecciona todas en el orden original
+            key="selector_interacciones"
+        )
+    else:
+        orden_interacciones = []
+    # -------------------------------------------------
+
+    # Llamamos a la función pasando el orden elegido
+    fns_int = ce._gen_interactions(R, custom_order=orden_interacciones)
+    
     if fns_int:
-        for fn in fns_int:
-            if os.path.exists(fn):
-                st.image(fn, use_container_width=True)
+        if isinstance(fns_int, str):
+            st.image(fns_int, use_container_width=True)
+        else:
+            for fn in fns_int: 
+                if os.path.exists(fn):
+                    st.image(fn, use_container_width=True)
     else:
         st.info("Ninguna interaccion significativa en el modelo.")
+
 
     with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
         st.markdown("""
@@ -687,6 +708,10 @@ elif st.session_state.stage == 'report':
                 'Residuales': ce._gen_residuales(df, R),
                 'EfectosPrincipales': ce._gen_main_effects(R, st.session_state.spec),
             }
+            
+            # AQUÍ AGREGAMOS EL ORDEN AL REPORTE DE WORD
+            fns_int = ce._gen_interactions(R, custom_order=orden_interacciones) 
+
             fns_int = ce._gen_interactions(R)
             if fns_int: figs['Interacciones'] = fns_int
             if st.session_state.via == ce.VIA_2:
