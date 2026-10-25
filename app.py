@@ -238,10 +238,25 @@ elif st.session_state.stage == 'full_model':
     st.write(f"**R2 = {R['R2']:.4f}**" + (f" | **R2 ajustado = {R['R2_adj']:.4f}**" if R.get('R2_adj') else ""))
     st.caption("💡 **El R2** (de 0 a 1) indica qué porcentaje de la variabilidad total del proceso está explicada por el modelo. Un R2 mayor a 0.80 suele ser muy bueno.")
 
-    st.markdown("### 2. Diagrama de Pareto")
+    if via == ce.VIA_2:
+        st.markdown("### 2. Diseño y Curvatura (Exclusivo Vía 2)")
+        st.markdown("""
+        Como este diseño tiene un **punto central**, podemos evaluar si el comportamiento es curvo (no lineal).
+        - **Esquema del cubo**: Muestra dónde están ubicadas las 8 esquinas (±1) y el punto central (0,0,0).
+        - **Gráfico de Curvatura**: Compara la media del centro contra la media de las esquinas. Si el centro está muy alejado de la línea de las esquinas, hay curvatura.
+        """)
+        c1, c2 = st.columns(2)
+        fn_cub = ce._gen_cubo(R)
+        if fn_cub: c1.image(fn_cub, caption="Esquema del Diseño (Cubo 3D)", use_container_width=True)
+        
+        fn_curv = ce._gen_curvatura(R)
+        if fn_curv: c2.image(fn_curv, caption="Gráfico de Curvatura", use_container_width=True)
+
+
+    st.markdown("### 3. Diagrama de Pareto")
     st.image(ce._gen_pareto(R), use_container_width=True)
     
-    st.markdown("### 3. Grafico semi-normal (Daniel / Lenth)")
+    st.markdown("### 4. Grafico semi-normal (Daniel / Lenth)")
     st.image(ce._gen_seminormal(R), use_container_width=True)
 
     st.markdown("""
@@ -451,11 +466,16 @@ elif st.session_state.stage == 'diagnostics':
     - Líneas que **se cruzan**: Interacción antagónica (el efecto de uno se invierte si cambias el nivel del otro).
     - Líneas que **se separan**: Interacción sinérgica (los efectos se potencian).
     """)
-    fn_int = ce._gen_interactions(R)
-    if fn_int:
-        st.image(fn_int, use_container_width=True)
+
+    fns_int = ce._gen_interactions(R)
+    if fns_int:
+        # Mostramos solo las individuales en la app para que se vean grandes
+        for fn in fns_int[1:]: 
+            st.image(fn, use_container_width=True)
     else:
         st.info("Ninguna interaccion significativa en el modelo.")
+
+
     with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
         st.markdown("""
         - ¿Las líneas son paralelas o no?
@@ -566,8 +586,8 @@ elif st.session_state.stage == 'report':
                 'Residuales': ce._gen_residuales(df, R),
                 'EfectosPrincipales': ce._gen_main_effects(R, st.session_state.spec),
             }
-            fn_int = ce._gen_interactions(R)
-            if fn_int: figs['Interacciones'] = fn_int
+            fns_int = ce._gen_interactions(R)
+            if fns_int: figs['Interacciones'] = fns_int
             if st.session_state.via == ce.VIA_2:
                 fn_cub = ce._gen_cubo(R)
                 if fn_cub: figs['Cubo'] = fn_cub
@@ -588,13 +608,20 @@ elif st.session_state.stage == 'report':
         st.download_button("Descargar Plantilla de informe (Word)", st.session_state.word_bytes,
                            file_name=f'{slug}_plantilla.docx',
                            mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+
         buf_zip = io.BytesIO()
         with zipfile.ZipFile(buf_zip, 'w') as z:
             z.writestr(f'{slug}_tablas.xlsx', st.session_state.excel_bytes)
             z.writestr(f'{slug}_plantilla.docx', st.session_state.word_bytes)
-            for name, fn in st.session_state.figs_dict.items():
-                if fn and os.path.exists(fn):
-                    z.write(fn, arcname=os.path.basename(fn))
+            for name, fns in st.session_state.figs_dict.items():
+                if isinstance(fns, list):
+                    for fn in fns:
+                        if fn and os.path.exists(fn):
+                            z.write(fn, arcname=os.path.basename(fn))
+                elif fns and os.path.exists(fns):
+                    z.write(fns, arcname=os.path.basename(fns))
+
+
         st.download_button("Descargar Todo en ZIP", buf_zip.getvalue(),
                            file_name=f'{slug}_analisis.zip', mime='application/zip')
 
