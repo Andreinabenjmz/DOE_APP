@@ -608,10 +608,7 @@ elif st.session_state.stage == 'diagnostics':
     for idx, row in cond_medias.iterrows():
         fila = {'Posición': idx + 1, 'Corrida': int(row['Corrida'])}
         for f in st.session_state.factores:
-            val = row[f]
-            if val == -1: fila[f] = "Nivel Bajo (-1)"
-            elif val == 1: fila[f] = "Nivel Alto (+1)"
-            else: fila[f] = "Centro (0)"
+            fila[f] = row[f]  # <-- Dejar el valor original (300, X, Sin, etc.)
         fila['Media de Y'] = round(row['Y'], 4)
         ranking_data.append(fila)
     
@@ -841,18 +838,15 @@ elif st.session_state.stage == 'report':
             cond_medias_word['Y'] = raw_orig_word[resp_cols_word].mean(axis=1)
             
             cond_medias_word = cond_medias_word.sort_values(by='Y', ascending=False).head(5).reset_index(drop=True)
-            
+
             # Preparar la tabla para Word
             tabla_word = cond_medias_word.copy()
             tabla_word.insert(0, 'Posición', range(1, len(tabla_word)+1))
-            
-            # Reemplazar -1 y 1 por texto más amigable
-            for f in st.session_state.factores:
-                tabla_word[f] = tabla_word[f].apply(lambda x: "Bajo (-1)" if x==-1 else ("Alto (+1)" if x==1 else "Centro (0)"))
                 
             tabla_word = tabla_word.rename(columns={'Y': 'Media de Y'})
             
             _insertar_tabla_word(doc, tabla_word)
+
             doc.add_paragraph("Recomendación operativa: [Escribe aquí la combinación que sugieres y por qué]")
             # -----------------------------
 
