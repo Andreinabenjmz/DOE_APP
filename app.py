@@ -124,14 +124,13 @@ with st.sidebar:
 
         if st.button("Procesar", type='primary'):
             try:
-        if st.button("Procesar", type='primary'):
-            try:
                 # NUEVO: Aplicar el renombrado si el estudiante escribió algo
                 if mapping_nombres:
                     raw = raw.rename(columns=mapping_nombres)
                     cols = [mapping_nombres.get(c, c) for c in cols]
 
                 rp = raw.copy()
+
                 # ... (el resto de tu código sigue igual)
                 rp = raw.copy()
                 for f in cols:
