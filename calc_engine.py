@@ -474,8 +474,10 @@ def generar_tabla_regresion(df, R):
     
     for t in terms:
         if '*' in t:
-            f1, f2 = t.split('*')
-            parts.append(f'Q("{f1}"):Q("{f2}")')
+            # CORRECCIÓN AQUÍ: Manejar interacciones de 2, 3 o 4 vías
+            factors_in_term = t.split('*')
+            term_formula = ':'.join(f'Q("{f}")' for f in factors_in_term)
+            parts.append(term_formula)
             
     formula = 'Q("Y") ~ ' + ' + '.join(parts) if parts else 'Q("Y") ~ 1'
     
@@ -505,7 +507,6 @@ def generar_tabla_regresion(df, R):
     coef_df['Superior 95%'] = conf_int[1].values
     
     # VIF (Varianza inflada - en diseños ortogonales suele ser 1)
-    # Por simplicidad, para este tipo de diseños lo ponemos en 1.0
     coef_df['VIF'] = 1.0 
     
     # 4. Resumen de Ajuste Global
