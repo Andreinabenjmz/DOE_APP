@@ -65,6 +65,7 @@ def _detectar_columnas(raw):
         factores.append(c)
     return factores, respuestas, descartar
 
+
 # ---------- Sidebar ----------
 with st.sidebar:
     st.header("Configuracion")
@@ -94,7 +95,7 @@ with st.sidebar:
         cols = st.multiselect("Factores", raw.columns.tolist(), default=fact_cands)
         resp = st.multiselect("Respuesta(s)", raw.columns.tolist(), default=resp_cands)
 
-        # --- NUEVO: Panel para renombrar columnas ---
+        # --- PANEL PARA RENOMBRAR ---
         mapping_nombres = {}
         if len(cols) > 0:
             with st.expander("✏️ Renombrar factores (opcional)"):
@@ -103,7 +104,32 @@ with st.sidebar:
                     nuevo = st.text_input(f"Nombre para '{c}':", value=c, key=f"rename_{c}")
                     if nuevo.strip() != "" and nuevo.strip() != c:
                         mapping_nombres[c] = nuevo.strip()
-        # --------------------------------------------
+        
+        # --- PANEL PARA CONFIGURAR NIVELES -1 / +1 ---
+        mapeos_niveles = {}
+        if len(cols) > 0:
+            with st.expander("⚙️ Configurar Niveles (-1 / +1)", expanded=False):
+                st.markdown("Elige qué nivel corresponde al **bajo (-1)** y cuál al **alto (+1)**.")
+                for c in cols:
+                    col_real = mapping_nombres.get(c, c)
+                    vals = list(dict.fromkeys(raw[col_real].dropna().tolist()))
+                    
+                    if set(vals).issubset({-1,0,1,-1.0,0.0,1.0}):
+                        continue
+                        
+                    if len(vals) == 2:
+                        v_bajo = st.selectbox(f"'{col_real}' - Nivel BAJO (-1):", vals, index=0, key=f"low_{c}")
+                        v_alto = [v for v in vals if v != v_bajo][0]
+                        st.caption(f"→ Nivel ALTO (+1): **{v_alto}**")
+                        mapeos_niveles[col_real] = {v_bajo: -1, v_alto: 1}
+                        
+                    elif len(vals) == 3:
+                        v_bajo = st.selectbox(f"'{col_real}' - Nivel BAJO (-1):", vals, index=0, key=f"low_{c}")
+                        v_alto = st.selectbox(f"'{col_real}' - Nivel ALTO (+1):", [v for v in vals if v != v_bajo], index=0, key=f"high_{c}")
+                        v_mid = [v for v in vals if v != v_bajo and v != v_alto][0]
+                        st.caption(f"→ Centro (0): **{v_mid}**")
+                        mapeos_niveles[col_real] = {v_bajo: -1, v_mid: 0, v_alto: 1}
+            st.markdown("---")
 
         via = st.radio("Via",
                        options=[ce.VIA_1, ce.VIA_2, ce.VIA_3],
@@ -124,29 +150,31 @@ with st.sidebar:
 
         if st.button("Procesar", type='primary'):
             try:
-                # NUEVO: Aplicar el renombrado si el estudiante escribió algo
+                # 1. Aplicar el renombrado
                 if mapping_nombres:
                     raw = raw.rename(columns=mapping_nombres)
                     cols = [mapping_nombres.get(c, c) for c in cols]
 
                 rp = raw.copy()
-
-                # ... (el resto de tu código sigue igual)
-                rp = raw.copy()
+                
+                # 2. Aplicar los niveles manuales del estudiante
                 for f in cols:
-                    vals = list(dict.fromkeys(rp[f].dropna().tolist()))
-                    if set(vals).issubset({-1,0,1,-1.0,0.0,1.0}): continue
-                    if len(vals) != 2:
-                        raise ValueError(f"Columna '{f}' tiene {len(vals)} niveles")
-                    if all(isinstance(v, (int, float)) for v in vals):
-                        lo, hi = min(vals), max(vals)
+                    if f in mapeos_niveles:
+                        rp[f] = rp[f].map(mapeos_niveles[f])
+                    elif set(rp[f].dropna().unique()).issubset({-1,0,1,-1.0,0.0,1.0}):
+                        continue
                     else:
-                        lo, hi = vals[0], vals[1]
-                    rp[f] = rp[f].map({lo: -1, hi: 1})
+                        vals = list(dict.fromkeys(rp[f].dropna().tolist()))
+                        if len(vals) == 2:
+                            lo, hi = min(vals), max(vals)
+                            rp[f] = rp[f].map({lo: -1, hi: 1})
+                
+                # 3. Convertir respuestas a numérico y preparar datos
                 for c in resp:
                     rp[c] = pd.to_numeric(rp[c], errors='raise')
                 df = ce.preparar_datos(rp, cols, resp)
 
+                # 4. Guardar en el estado de la sesión y avanzar al Paso 1
                 st.session_state.df = df
                 st.session_state.via = via
                 st.session_state.factores = cols
@@ -469,16 +497,56 @@ elif st.session_state.stage == 'diagnostics':
     st.markdown("### 2. Efectos Principales")
     st.markdown("""
     Muestra cómo cambia la media de la respuesta (Y) cuando el factor pasa de su nivel bajo (-1) a su nivel alto (+1).
-    - Si la línea **sube**, el efecto es positivo.
-    - Si la línea **baja**, el efecto es negativo.
-    - Si la línea es **plana**, el factor casi no afecta al proceso.
     """)
     st.image(ce._gen_main_effects(R, st.session_state.spec), use_container_width=True)
+    
+    # --- NUEVO: Tabla de Efectos Principales Detallada ---
+    st.markdown("#### Tabla Resumen de Efectos")
+    filas_ef = []
+    for f in st.session_state.factores:
+        low_val = R['main_effects'][f]['low']
+        high_val = R['main_effects'][f]['high']
+        eff = R['main_effects'][f]['eff']
+        filas_ef.append({
+            'Factor': f,
+            'Media Nivel Bajo (-1)': round(low_val, 4),
+            'Media Nivel Alto (+1)': round(high_val, 4),
+            'Efecto (+1 vs -1)': round(eff, 4)
+        })
+    st.dataframe(pd.DataFrame(filas_ef), use_container_width=True)
+    st.caption("✍️ **Para tu informe:** En la columna de interpretación, escribe qué significa cada efecto en tu proceso (ej. 'El soporte grande favorece la viabilidad').")
+    
+    # --- NUEVO: Tabla de Ranking de Mejores Condiciones ---
+    st.markdown("#### 🏆 Ranking de Condiciones Observadas (Top 5)")
+    st.markdown("""
+    Estas son las combinaciones que dieron los mejores resultados en el experimento. 
+    *(Ordenadas de mayor a menor según la media de Y)*
+    """)
+    
+    # Calcular medias por combinación
+    cond_medias = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
+    cond_medias = cond_medias.sort_values(by='Y', ascending=False).head(5).reset_index(drop=True)
+    
+    # Construir la tabla de ranking
+    ranking_data = []
+    for idx, row in cond_medias.iterrows():
+        fila = {'Posición': idx + 1}
+        for f in st.session_state.factores:
+            val = row[f]
+            if val == -1: fila[f] = "Nivel Bajo (-1)"
+            elif val == 1: fila[f] = "Nivel Alto (+1)"
+            else: fila[f] = "Centro (0)"
+        fila['Media de Y'] = round(row['Y'], 4)
+        ranking_data.append(fila)
+    
+    st.dataframe(pd.DataFrame(ranking_data), use_container_width=True)
+
     with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
         st.markdown("""
         - ¿Cuál es el gráfico con la pendiente más pronunciada? (Ese es el factor dominante).
         - ¿Los signos de las pendientes coinciden con los efectos que viste en el Pareto?
         - Si hay una especificación (banda verde), ¿qué niveles del factor te mantienen dentro de la spec?
+        - **En la tabla de Ranking:** ¿Qué factores se repiten en las primeras posiciones? ¿Qué combinación recomendarías?
         """)
 
     st.markdown("### 3. Interacciones")
@@ -578,31 +646,47 @@ elif st.session_state.stage == 'report':
             with pd.ExcelWriter(buf_xlsx) as w:
                 for hoja, t in tablas.items():
                     t.to_excel(w, sheet_name=hoja[:31], index=False)
-
             doc = Document()
             doc.add_heading(f"Informe de Analisis 2^k - {nombre}", 0)
             doc.add_paragraph(f"Estudiante: {st.session_state.estudiante}")
             doc.add_paragraph(f"Curso: {st.session_state.curso}")
             doc.add_paragraph(f"Fecha: {date.today().strftime('%Y-%m-%d')}")
+            
             doc.add_heading("1. Diseno experimental", level=1)
             doc.add_paragraph(f"Factores: {', '.join(st.session_state.factores)}")
             doc.add_paragraph(f"N = {len(df)}")
             doc.add_paragraph("[Escribe la descripcion del diseno]")
+            
             doc.add_heading("2. Analisis y resultados", level=1)
             doc.add_heading("2.1. Terminos en el modelo final", level=2)
             doc.add_paragraph(f"{', '.join(st.session_state.selected_terms or list(R['effects'].keys()))}")
+            
             doc.add_heading("2.2. ANOVA", level=2)
             doc.add_paragraph("[Pega la tabla ANOVA del Excel]")
-            doc.add_heading("2.3. Ecuacion de regresion", level=2)
+            
+            doc.add_heading("2.3. Efectos Principales", level=2)
+            doc.add_paragraph("Tabla de efectos principales (medias y efectos):")
+            doc.add_paragraph("[Pega la tabla de efectos principales del Excel]")
+            doc.add_paragraph("Interpretación de los efectos: [Escribe aquí qué significa cada efecto]")
+            
+            doc.add_heading("2.4. Condiciones Recomendadas (Ranking)", level=2)
+            doc.add_paragraph("[Pega la tabla de Ranking Top 5 del Excel]")
+            doc.add_paragraph("Recomendación operativa: [Escribe aquí la combinación que sugieres y por qué]")
+            
+            doc.add_heading("2.5. Ecuacion de regresion", level=2)
             doc.add_paragraph(f"Beta 0 = {R['y_bar']:.4f}")
             if eq: doc.add_paragraph(eq)
             doc.add_paragraph("[Interpreta los coeficientes aqui]")
-            doc.add_heading("2.4. Diagnostico", level=2)
+            
+            doc.add_heading("2.6. Diagnostico", level=2)
             doc.add_paragraph("[Analiza los 3 supuestos]")
+            
             doc.add_heading("3. Conclusiones", level=1)
             doc.add_paragraph("[Conclusiones numeradas]")
+            
             doc.add_heading("4. Recomendaciones operativas", level=1)
             doc.add_paragraph("[Que niveles fijar/evitar]")
+            
             buf_word = io.BytesIO()
             doc.save(buf_word)
 
