@@ -727,13 +727,15 @@ elif st.session_state.stage == 'report':
                     t.to_excel(w, sheet_name=hoja[:31], index=False)
 
             # 3. GENERAR GRÁFICOS PRIMERO (para poder insertarlos en el Word)
+            # Usamos Rf (modelo completo) para el Pareto y Daniel, y R (reducido) para los demás
+            Rf = st.session_state.R_full
             figs = {
-                'Pareto': ce._gen_pareto(R),
-                'SemiNormal': ce._gen_seminormal(R),
+                'Pareto': ce._gen_pareto(Rf if Rf else R),
+                'SemiNormal': ce._gen_seminormal(Rf if Rf else R),
                 'Residuales': ce._gen_residuales(df, R),
                 'EfectosPrincipales': ce._gen_main_effects(R, st.session_state.spec),
             }
-            
+
 
             # AQUÍ AGREGAMOS EL ORDEN AL REPORTE DE WORD
             fns_int = ce._gen_interactions(R, custom_order=st.session_state.get('orden_interacciones', []))  
