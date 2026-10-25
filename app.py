@@ -469,12 +469,16 @@ elif st.session_state.stage == 'diagnostics':
 
     fns_int = ce._gen_interactions(R)
     if fns_int:
-        # Mostramos solo las individuales en la app para que se vean grandes
-        for fn in fns_int[1:]: 
-            st.image(fn, use_container_width=True)
+        # Si por alguna razón devuelve un solo texto (versión vieja de engine)
+        if isinstance(fns_int, str):
+            st.image(fns_int, use_container_width=True)
+        # Si devuelve la lista (versión nueva), muestra las individuales
+        else:
+            for fn in fns_int[1:]: 
+                if os.path.exists(fn):
+                    st.image(fn, use_container_width=True)
     else:
         st.info("Ninguna interaccion significativa en el modelo.")
-
 
     with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
         st.markdown("""

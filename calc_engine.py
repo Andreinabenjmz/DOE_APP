@@ -308,8 +308,25 @@ def _gen_main_effects(R, spec):
 def _gen_interactions(R):
     es_fb = False
     sig = [n for n in R['effects'] if len(n.split('*'))==2]
-    if not sig: return None
+    if not sig: return []
 
+    files = []
+    # 1. Guardar imagenes individuales (mas grandes)
+    for name in sig:
+        f1, f2 = name.split('*'); it = R['interactions'][(f1,f2)]
+        fig, ax = plt.subplots(figsize=(7, 5)) 
+        ax.plot([-1,1], [it['mll'], it['mhl']], 'o-', label=f'{f2}=-1')
+        ax.plot([-1,1], [it['mlh'], it['mhh']], 's--', label=f'{f2}=+1')
+        ax.set_xticks([-1,1]); ax.set_xticklabels([f'{f1}=-1', f'{f1}=+1'])
+        ax.set_xlabel(f1); ax.set_ylabel('Media de Y')
+        suf = ' (exploratoria)' if R['via'] == VIA_3 else (' (NO significativa)' if es_fb else '')
+        ax.set_title(f'Interaccion {name}{suf}'); ax.legend(); ax.grid(alpha=0.3)
+        plt.tight_layout()
+        fn_ind = f'interaccion_{f1}_x_{f2}.png'
+        plt.savefig(fn_ind, bbox_inches='tight'); plt.close()
+        files.append(fn_ind)
+
+    # 2. Guardar el grafico combinado (para el reporte en Word)
     fig, axes = plt.subplots(1, len(sig), figsize=(5*len(sig), 4))
     if len(sig) == 1: axes = [axes]
     for ax, name in zip(axes, sig):
@@ -318,12 +335,13 @@ def _gen_interactions(R):
         ax.plot([-1,1], [it['mlh'], it['mhh']], 's--', label=f'{f2}=+1')
         ax.set_xticks([-1,1]); ax.set_xticklabels([f'{f1}=-1', f'{f1}=+1'])
         ax.set_xlabel(f1); ax.set_ylabel('Media de Y')
-        suf = ''
-        if R['via'] == VIA_3: suf = ' (exploratoria)'
-        elif es_fb: suf = ' (NO significativa)'
+        suf = ' (exploratoria)' if R['via'] == VIA_3 else (' (NO significativa)' if es_fb else '')
         ax.set_title(f'Interaccion {name}{suf}'); ax.legend(); ax.grid(alpha=0.3)
     plt.tight_layout()
-    fn = 'interacciones.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
+    fn_all = 'interacciones_todas.png'; plt.savefig(fn_all, bbox_inches='tight'); plt.close()
+    
+    # Retornamos una lista con todas las imagenes
+    return [fn_all] + files
 
 def _gen_residuales(df, R):
     terms = R.get('terms_included', list(R['effects'].keys()))
