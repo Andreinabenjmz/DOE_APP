@@ -277,53 +277,44 @@ elif st.session_state.stage == 'design':
     c2.metric("N total", n_total)
     c3.metric("Bloques" if via == ce.VIA_2 else "Replicas", n_grupos if via != ce.VIA_3 else 1)
     c4.metric("Via", via)
-
-    st.info(f"**De donde viene N: ** {expl}")
     
-    # --- NUEVO: Tabla de Factores y Niveles ---
+    st.info(f"**De donde viene N:** {expl}")
+    
+    # --- Tabla 1.1: Clasificación de Factores y Niveles ---
     st.markdown("### 1.1. Clasificación de Factores y Niveles")
     filas_niv = []
     mapeo_guardado = st.session_state.get('niveles_mapeo', {})
     for i, f in enumerate(factores):
-        simbolo = chr(65 + i) # A, B, C, D
+        simbolo = chr(65 + i)
         map_f = mapeo_guardado.get(f, {})
-        # Buscar qué valor original corresponde a -1 y a +1
         low_val = next((k for k, v in map_f.items() if v == -1), "-1")
         high_val = next((k for k, v in map_f.items() if v == 1), "+1")
-        
         filas_niv.append({
-            'Factor': f,
-            'Símbolo': simbolo,
-            'Nivel Bajo (-1)': low_val,
-            'Nivel Alto (+1)': high_val
+            'Factor': f, 'Símbolo': simbolo,
+            'Nivel Bajo (-1)': low_val, 'Nivel Alto (+1)': high_val
         })
     st.dataframe(pd.DataFrame(filas_niv), use_container_width=True)
-    # ------------------------------------------
 
-    # --- NUEVO: Tabla de Datos del Experimento ---
+    # --- Tabla 1.2: Datos del Experimento ---
     st.markdown("### 1.2. Datos del experimento")
-    st.markdown("Resumen de las mediciones por cada corrida, incluyendo Total, Media y Varianza.")
-    
     raw_orig = st.session_state.raw_renamed
-    resp = st.session_state.respuesta
-    
-    # Construir tabla
+    resp_cols = st.session_state.respuesta
     tabla_datos = raw_orig.copy()
     tabla_datos.insert(0, 'N', range(1, len(tabla_datos)+1))
-    tabla_datos['Total'] = tabla_datos[resp].sum(axis=1)
-    tabla_datos['Media'] = tabla_datos[resp].mean(axis=1)
-    tabla_datos['Varianza'] = tabla_datos[resp].var(axis=1)
-    
-    # Ordenar columnas
-    cols_mostrar = ['N'] + factores + resp + ['Total', 'Media', 'Varianza']
+    tabla_datos['Total'] = tabla_datos[resp_cols].sum(axis=1)
+    tabla_datos['Media'] = tabla_datos[resp_cols].mean(axis=1)
+    tabla_datos['Varianza'] = tabla_datos[resp_cols].var(axis=1)
+    cols_mostrar = ['N'] + factores + resp_cols + ['Total', 'Media', 'Varianza']
     tabla_datos = tabla_datos[cols_mostrar]
-    
     st.dataframe(tabla_datos.round(4), use_container_width=True)
-    st.write(f"**Gran media = {df['Y'].mean():.4f}** (suma de las {len(df)} observaciones entre {len(df)})")
-    # ----------------------------------------------
+    st.write(f"**Gran media = {df['Y'].mean():.4f}**")
 
+    # --- Tabla 1.3: Combinaciones del diseño ---
     st.markdown("### Combinaciones del diseno")
+    cond = df[df['Curvatura']==0][factores].drop_duplicates().reset_index(drop=True)
+    cond.insert(0, 'Condicion', range(1, len(cond)+1))
     st.dataframe(cond, use_container_width=True)
+
     if st.button("Ir a Modelo completo", type='primary'):
         st.session_state.stage = 'full_model'; st.rerun()
 
