@@ -12,7 +12,7 @@ from docx import Document
 
 import calc_engine as ce
 
-from docx.shared import Inches
+from docx.shared import Inches, Pt
 
 def _insertar_tabla_word(doc, df_tabla):
     """Convierte un DataFrame de Pandas en una tabla bonita de Word."""
@@ -184,7 +184,10 @@ with st.sidebar:
                 if mapping_nombres:
                     raw = raw.rename(columns=mapping_nombres)
                     cols = [mapping_nombres.get(c, c) for c in cols]
-
+                
+                # NUEVO: Guardar los datos originales con nombres actualizados
+                st.session_state.raw_renamed = raw.copy() 
+                
                 rp = raw.copy()
                 
                 # 2. Aplicar los niveles manuales del estudiante
@@ -208,6 +211,8 @@ with st.sidebar:
                 st.session_state.df = df
                 st.session_state.via = via
                 st.session_state.factores = cols
+                # NUEVO: Guardar los niveles elegidos
+                st.session_state.niveles_mapeo = mapeos_niveles 
                 st.session_state.respuesta = resp
                 st.session_state.spec = spec
                 st.session_state.nombre = nombre
@@ -272,10 +277,51 @@ elif st.session_state.stage == 'design':
     c2.metric("N total", n_total)
     c3.metric("Bloques" if via == ce.VIA_2 else "Replicas", n_grupos if via != ce.VIA_3 else 1)
     c4.metric("Via", via)
+
+    st.info(f"**De donde viene N: ** {expl}")
     
-    st.info(f"**De donde viene N:** {expl}")
-    cond = df[df['Curvatura']==0][factores].drop_duplicates().reset_index(drop=True)
-    cond.insert(0, 'Condicion', range(1, len(cond)+1))
+    # --- NUEVO: Tabla de Factores y Niveles ---
+    st.markdown("### 1.1. Clasificación de Factores y Niveles")
+    filas_niv = []
+    mapeo_guardado = st.session_state.get('niveles_mapeo', {})
+    for i, f in enumerate(factores):
+        simbolo = chr(65 + i) # A, B, C, D
+        map_f = mapeo_guardado.get(f, {})
+        # Buscar qué valor original corresponde a -1 y a +1
+        low_val = next((k for k, v in map_f.items() if v == -1), "-1")
+        high_val = next((k for k, v in map_f.items() if v == 1), "+1")
+        
+        filas_niv.append({
+            'Factor': f,
+            'Símbolo': simbolo,
+            'Nivel Bajo (-1)': low_val,
+            'Nivel Alto (+1)': high_val
+        })
+    st.dataframe(pd.DataFrame(filas_niv), use_container_width=True)
+    # ------------------------------------------
+
+    # --- NUEVO: Tabla de Datos del Experimento ---
+    st.markdown("### 1.2. Datos del experimento")
+    st.markdown("Resumen de las mediciones por cada corrida, incluyendo Total, Media y Varianza.")
+    
+    raw_orig = st.session_state.raw_renamed
+    resp = st.session_state.respuesta
+    
+    # Construir tabla
+    tabla_datos = raw_orig.copy()
+    tabla_datos.insert(0, 'N', range(1, len(tabla_datos)+1))
+    tabla_datos['Total'] = tabla_datos[resp].sum(axis=1)
+    tabla_datos['Media'] = tabla_datos[resp].mean(axis=1)
+    tabla_datos['Varianza'] = tabla_datos[resp].var(axis=1)
+    
+    # Ordenar columnas
+    cols_mostrar = ['N'] + factores + resp + ['Total', 'Media', 'Varianza']
+    tabla_datos = tabla_datos[cols_mostrar]
+    
+    st.dataframe(tabla_datos.round(4), use_container_width=True)
+    st.write(f"**Gran media = {df['Y'].mean():.4f}** (suma de las {len(df)} observaciones entre {len(df)})")
+    # ----------------------------------------------
+
     st.markdown("### Combinaciones del diseno")
     st.dataframe(cond, use_container_width=True)
     if st.button("Ir a Modelo completo", type='primary'):
@@ -552,17 +598,21 @@ elif st.session_state.stage == 'diagnostics':
     Estas son las combinaciones que dieron los mejores resultados en el experimento. 
     *(Ordenadas de mayor a menor según la media de Y)*
     """)
+
+    # 1. Tomar los datos originales para mantener el orden de las corridas
+    raw_orig = st.session_state.raw_renamed
+    resp_cols = st.session_state.respuesta
     
-    # 1. Calcular medias por combinación
-    cond_medias = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
+    cond_medias = raw_orig[st.session_state.factores].copy()
+    # Asignar número de corrida basado en la fila original de Excel
+    cond_medias.insert(0, 'Corrida', range(1, len(cond_medias) + 1))
+    # Calcular la media de las respuestas
+    cond_medias['Y'] = raw_orig[resp_cols].mean(axis=1)
     
-    # 2. Agregar el número de corrida (1 al N, en el orden original)
-    cond_medias.insert(0, 'Corrida', range(1, len(cond_medias)+1))
-    
-    # 3. Ordenar y sacar el Top 5
+    # 2. Ordenar y sacar el Top 5
     cond_medias = cond_medias.sort_values(by='Y', ascending=False).head(5).reset_index(drop=True)
     
-    # 4. Construir la tabla
+    # 3. Construir la tabla
     ranking_data = []
     for idx, row in cond_medias.iterrows():
         fila = {'Posición': idx + 1, 'Corrida': int(row['Corrida'])}
@@ -574,7 +624,7 @@ elif st.session_state.stage == 'diagnostics':
         fila['Media de Y'] = round(row['Y'], 4)
         ranking_data.append(fila)
     
-    st.dataframe(pd.DataFrame(ranking_data), use_container_width=True)
+    st.dataframe(pd.DataFrame(ranking_data), use_container_width=True)   
 
     with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
         st.markdown("""
@@ -709,11 +759,53 @@ elif st.session_state.stage == 'report':
             doc.add_paragraph(f"Curso: {st.session_state.curso}")
             doc.add_paragraph(f"Fecha: {date.today().strftime('%Y-%m-%d')}")
             
+
             doc.add_heading("1. Diseño experimental", level=1)
             doc.add_paragraph(f"Factores: {', '.join(st.session_state.factores)}")
             doc.add_paragraph(f"N = {len(df)}")
             doc.add_paragraph("Descripción del diseño: [Escribe aquí el contexto y los objetivos del experimento]")
             
+            # --- NUEVO: Tabla de Factores en Word ---
+            doc.add_heading("1.1. Clasificación de Factores y Niveles", level=2)
+            filas_niv_word = []
+            mapeo_guardado_word = st.session_state.get('niveles_mapeo', {})
+            for i, f in enumerate(st.session_state.factores):
+                simbolo = chr(65 + i)
+                map_f = mapeo_guardado_word.get(f, {})
+                low_val = next((k for k, v in map_f.items() if v == -1), "-1")
+                high_val = next((k for k, v in map_f.items() if v == 1), "+1")
+                filas_niv_word.append({
+                    'Factor': f, 'Símbolo': simbolo,
+                    'Nivel Bajo (-1)': low_val, 'Nivel Alto (+1)': high_val
+                })
+            _insertar_tabla_word(doc, pd.DataFrame(filas_niv_word))
+            # ----------------------------------------
+
+            # --- NUEVO: Tabla de Datos del Experimento en Word ---
+            doc.add_heading("1.2. Datos del experimento", level=2)
+            doc.add_paragraph("Resumen de las mediciones por cada corrida:")
+            
+            # Obtener los datos originales y las respuestas
+            raw_orig = st.session_state.raw_renamed
+            resp_cols = st.session_state.respuesta
+            
+            tabla_datos_word = raw_orig.copy()
+            tabla_datos_word.insert(0, 'N', range(1, len(tabla_datos_word)+1))
+            tabla_datos_word['Total'] = tabla_datos_word[resp_cols].sum(axis=1)
+            tabla_datos_word['Media'] = tabla_datos_word[resp_cols].mean(axis=1)
+            tabla_datos_word['Varianza'] = tabla_datos_word[resp_cols].var(axis=1)
+            
+            # Seleccionar y ordenar columnas para que se vea bonito
+            cols_mostrar = ['N'] + st.session_state.factores + resp_cols + ['Total', 'Media', 'Varianza']
+            tabla_datos_word = tabla_datos_word[cols_mostrar]
+            
+            # Insertar tabla en el Word
+            _insertar_tabla_word(doc, tabla_datos_word)
+            doc.add_paragraph(f"Gran media = {df['Y'].mean():.4f}")
+            # -----------------------------------------------------
+
+            doc.add_heading("2. Análisis y resultados", level=1)
+
             doc.add_heading("2. Análisis y resultados", level=1)
             
             doc.add_heading("2.1. ANOVA", level=2)
@@ -749,9 +841,14 @@ elif st.session_state.stage == 'report':
             # --- NUEVO: Ranking Top 5 ---
             doc.add_heading("2.5. Condiciones Recomendadas (Ranking)", level=2)
             
-            # Calcular el ranking para el Word
-            cond_medias_word = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
-            cond_medias_word.insert(0, 'Corrida', range(1, len(cond_medias_word)+1))
+            # Calcular el ranking usando los datos originales
+            raw_orig_word = st.session_state.raw_renamed
+            resp_cols_word = st.session_state.respuesta
+            
+            cond_medias_word = raw_orig_word[st.session_state.factores].copy()
+            cond_medias_word.insert(0, 'Corrida', range(1, len(cond_medias_word) + 1))
+            cond_medias_word['Y'] = raw_orig_word[resp_cols_word].mean(axis=1)
+            
             cond_medias_word = cond_medias_word.sort_values(by='Y', ascending=False).head(5).reset_index(drop=True)
             
             # Preparar la tabla para Word
