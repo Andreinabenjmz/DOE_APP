@@ -240,13 +240,27 @@ elif st.session_state.stage == 'full_model':
 
     st.markdown("### 2. Diagrama de Pareto")
     st.image(ce._gen_pareto(R), use_container_width=True)
-    st.markdown("### 3. Grafico semi-normal (Lenth)")
+    
+    st.markdown("### 3. Grafico semi-normal (Daniel / Lenth)")
     st.image(ce._gen_seminormal(R), use_container_width=True)
 
     st.markdown("""
-    ### Como leer estos graficos
-    **Pareto:** Las barras rojas cruzan la linea vertical → son significativas. Las azules no.
-    **Semi-normal:** Los puntos que se DESPEGAN de la linea diagonal son efectos reales. Los que siguen la linea son ruido.
+    ### Cómo leer estos gráficos (¡Muy importante!)
+    
+    **1. Diagrama de Pareto**
+    - Cada barra horizontal es un término del modelo (factor o interacción).
+    - La **longitud** de la barra indica cuán grande es su efecto sobre la respuesta.
+    - Las barras **ROJAS** cruzan la línea vertical roja (el umbral) → son estadísticamente significativas.
+    - Las barras **AZULES** no la cruzan → no son significativas (probablemente ruido).
+    - El gráfico está ordenado de menor a mayor: la barra de arriba es el efecto más grande.
+    
+    **2. Gráfico Semi-normal (Daniel / Lenth)**
+    - Cada punto es un término del modelo.
+    - El **Eje X** representa los cuantiles teóricos (no te preocupes por el número exacto).
+    - El **Eje Y** representa el valor absoluto del efecto (|efecto|).
+    - Los puntos que siguen la línea diagonal son efectos pequeños, indistinguibles del ruido.
+    - Los puntos que se **DESPEGAN** de la línea diagonal son efectos grandes, probablemente reales.
+    - La línea horizontal roja es el umbral ME (Margen de Error). Los puntos por encima de ella son "activos".
     """)
 
     with st.expander("🤔 Preguntas de reflexion (toma notas para tu informe)"):
