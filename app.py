@@ -94,6 +94,17 @@ with st.sidebar:
         cols = st.multiselect("Factores", raw.columns.tolist(), default=fact_cands)
         resp = st.multiselect("Respuesta(s)", raw.columns.tolist(), default=resp_cands)
 
+        # --- NUEVO: Panel para renombrar columnas ---
+        mapping_nombres = {}
+        if len(cols) > 0:
+            with st.expander("✏️ Renombrar factores (opcional)"):
+                st.markdown("Si tus columnas se llaman A, B, C, D, puedes ponerles su nombre real aquí:")
+                for c in cols:
+                    nuevo = st.text_input(f"Nombre para '{c}':", value=c, key=f"rename_{c}")
+                    if nuevo.strip() != "" and nuevo.strip() != c:
+                        mapping_nombres[c] = nuevo.strip()
+        # --------------------------------------------
+
         via = st.radio("Via",
                        options=[ce.VIA_1, ce.VIA_2, ce.VIA_3],
                        format_func=lambda v: f"{ce.VIA_INFO[v]['nombre']}")
@@ -113,6 +124,15 @@ with st.sidebar:
 
         if st.button("Procesar", type='primary'):
             try:
+        if st.button("Procesar", type='primary'):
+            try:
+                # NUEVO: Aplicar el renombrado si el estudiante escribió algo
+                if mapping_nombres:
+                    raw = raw.rename(columns=mapping_nombres)
+                    cols = [mapping_nombres.get(c, c) for c in cols]
+
+                rp = raw.copy()
+                # ... (el resto de tu código sigue igual)
                 rp = raw.copy()
                 for f in cols:
                     vals = list(dict.fromkeys(rp[f].dropna().tolist()))
