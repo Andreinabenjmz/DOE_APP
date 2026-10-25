@@ -239,6 +239,21 @@ def calcular_via3(df, factores):
     return R
 
 # ---------- Graficos ----------
+def _abbr_term(term, factores):
+    """Convierte un nombre largo (ej. Temperatura*Buffer) en letras (ej. A*D)."""
+    parts = term.split('*')
+    abbr = []
+    for p in parts:
+        if p == 'Curvatura':
+            abbr.append('Curv.')
+        else:
+            try:
+                idx = factores.index(p)
+                abbr.append(chr(65 + idx)) # 65 es 'A' en ASCII
+            except ValueError:
+                abbr.append(p)
+    return '*'.join(abbr)
+
 def _gen_pareto(R):
     terms = list(R['effects'].keys())
     if R['via'] == VIA_3:
