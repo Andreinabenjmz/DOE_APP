@@ -553,14 +553,19 @@ elif st.session_state.stage == 'diagnostics':
     *(Ordenadas de mayor a menor según la media de Y)*
     """)
     
-    # Calcular medias por combinación
+    # 1. Calcular medias por combinación
     cond_medias = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
+    
+    # 2. Agregar el número de corrida (1 al N, en el orden original)
+    cond_medias.insert(0, 'Corrida', range(1, len(cond_medias)+1))
+    
+    # 3. Ordenar y sacar el Top 5
     cond_medias = cond_medias.sort_values(by='Y', ascending=False).head(5).reset_index(drop=True)
     
-    # Construir la tabla de ranking
+    # 4. Construir la tabla
     ranking_data = []
     for idx, row in cond_medias.iterrows():
-        fila = {'Posición': idx + 1}
+        fila = {'Posición': idx + 1, 'Corrida': int(row['Corrida'])}
         for f in st.session_state.factores:
             val = row[f]
             if val == -1: fila[f] = "Nivel Bajo (-1)"
@@ -741,31 +746,53 @@ elif st.session_state.stage == 'report':
                 doc.add_picture(figs['EfectosPrincipales'], width=Inches(6))
             doc.add_paragraph("Interpretación de los efectos: [Escribe aquí qué significa cada efecto en el proceso]")
 
+            # --- NUEVO: Ranking Top 5 ---
+            doc.add_heading("2.5. Condiciones Recomendadas (Ranking)", level=2)
+            
+            # Calcular el ranking para el Word
+            cond_medias_word = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
+            cond_medias_word.insert(0, 'Corrida', range(1, len(cond_medias_word)+1))
+            cond_medias_word = cond_medias_word.sort_values(by='Y', ascending=False).head(5).reset_index(drop=True)
+            
+            # Preparar la tabla para Word
+            tabla_word = cond_medias_word.copy()
+            tabla_word.insert(0, 'Posición', range(1, len(tabla_word)+1))
+            
+            # Reemplazar -1 y 1 por texto más amigable
+            for f in st.session_state.factores:
+                tabla_word[f] = tabla_word[f].apply(lambda x: "Bajo (-1)" if x==-1 else ("Alto (+1)" if x==1 else "Centro (0)"))
+                
+            tabla_word = tabla_word.rename(columns={'Y': 'Media de Y'})
+            
+            _insertar_tabla_word(doc, tabla_word)
+            doc.add_paragraph("Recomendación operativa: [Escribe aquí la combinación que sugieres y por qué]")
+            # -----------------------------
+
             if 'Interacciones' in figs and figs['Interacciones']:
-                doc.add_heading("2.5. Interacciones", level=2)
+                doc.add_heading("2.6. Interacciones", level=2)
                 for fn_int in figs['Interacciones'][1:]: # Salta la imagen combinada
                     if os.path.exists(fn_int):
                         doc.add_picture(fn_int, width=Inches(5))
                 doc.add_paragraph("Interpretación: [Explica si las líneas son paralelas o se cruzan, y qué implican]")
 
             if st.session_state.via == ce.VIA_2:
-                doc.add_heading("2.6. Curvatura y Diseño", level=2)
+                doc.add_heading("2.7. Curvatura y Diseño", level=2)
                 if 'Cubo' in figs and os.path.exists(figs['Cubo']):
                     doc.add_picture(figs['Cubo'], width=Inches(4.5))
                 if 'Curvatura' in figs and os.path.exists(figs['Curvatura']):
                     doc.add_picture(figs['Curvatura'], width=Inches(4.5))
                 doc.add_paragraph("Interpretación: [Explica si hay comportamiento no lineal]")
 
-            doc.add_heading("2.7. Diagnóstico de residuales", level=2)
+            doc.add_heading("2.8. Diagnóstico de residuales", level=2)
             if 'Residuales' in figs and os.path.exists(figs['Residuales']):
                 doc.add_picture(figs['Residuales'], width=Inches(6.5))
             doc.add_paragraph("Interpretación: [Analiza los 3 supuestos: normalidad, homocedasticidad e independencia]")
             
-            doc.add_heading("2.8. Ecuación de regresión", level=2)
+            doc.add_heading("2.9. Ecuación de regresión", level=2)
             doc.add_paragraph(f"Beta 0 = {R['y_bar']:.4f}")
             if eq: doc.add_paragraph(eq, style='Intense Quote')
             doc.add_paragraph("Interpretación de los coeficientes: [Explica qué significa cada término en la ecuación]")
-            
+       
             doc.add_heading("3. Conclusiones", level=1)
             doc.add_paragraph("1. [Conclusión 1]")
             doc.add_paragraph("2. [Conclusión 2]")
