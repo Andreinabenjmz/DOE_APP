@@ -141,24 +141,24 @@ with st.sidebar:
             with st.expander("⚙️ Configurar Niveles (-1 / +1)", expanded=False):
                 st.markdown("Elige qué nivel corresponde al **bajo (-1)** y cuál al **alto (+1)**.")
                 for c in cols:
-                    col_real = mapping_nombres.get(c, c)
-                    vals = list(dict.fromkeys(raw[col_real].dropna().tolist()))
+                    nombre_mostrar = mapping_nombres.get(c, c)
+                    vals = list(dict.fromkeys(raw[c].dropna().tolist()))
                     
                     if set(vals).issubset({-1,0,1,-1.0,0.0,1.0}):
                         continue
                         
                     if len(vals) == 2:
-                        v_bajo = st.selectbox(f"'{col_real}' - Nivel BAJO (-1):", vals, index=0, key=f"low_{c}")
+                        v_bajo = st.selectbox(f"'{nombre_mostrar}' - Nivel BAJO (-1):", vals, index=0, key=f"low_{c}")
                         v_alto = [v for v in vals if v != v_bajo][0]
                         st.caption(f"→ Nivel ALTO (+1): **{v_alto}**")
-                        mapeos_niveles[col_real] = {v_bajo: -1, v_alto: 1}
+                        mapeos_niveles[nombre_mostrar] = {v_bajo: -1, v_alto: 1}
                         
                     elif len(vals) == 3:
-                        v_bajo = st.selectbox(f"'{col_real}' - Nivel BAJO (-1):", vals, index=0, key=f"low_{c}")
-                        v_alto = st.selectbox(f"'{col_real}' - Nivel ALTO (+1):", [v for v in vals if v != v_bajo], index=0, key=f"high_{c}")
+                        v_bajo = st.selectbox(f"'{nombre_mostrar}' - Nivel BAJO (-1):", vals, index=0, key=f"low_{c}")
+                        v_alto = st.selectbox(f"'{nombre_mostrar}' - Nivel ALTO (+1):", [v for v in vals if v != v_bajo], index=0, key=f"high_{c}")
                         v_mid = [v for v in vals if v != v_bajo and v != v_alto][0]
                         st.caption(f"→ Centro (0): **{v_mid}**")
-                        mapeos_niveles[col_real] = {v_bajo: -1, v_mid: 0, v_alto: 1}
+                        mapeos_niveles[nombre_mostrar] = {v_bajo: -1, v_mid: 0, v_alto: 1}
             st.markdown("---")
 
         via = st.radio("Via",
@@ -185,9 +185,9 @@ with st.sidebar:
                     raw = raw.rename(columns=mapping_nombres)
                     cols = [mapping_nombres.get(c, c) for c in cols]
                 
-                # NUEVO: Guardar los datos originales con nombres actualizados
-                st.session_state.raw_renamed = raw.copy() 
-                
+                # Guardar copia original con nombres nuevos (para tablas 1.2 y ranking)
+                st.session_state.raw_renamed = raw.copy()
+
                 rp = raw.copy()
                 
                 # 2. Aplicar los niveles manuales del estudiante
