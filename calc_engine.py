@@ -272,13 +272,13 @@ def _gen_pareto(R):
 def _gen_seminormal(R):
     L = R['lenth']; names = list(R['effects'].keys())
     ae = np.abs([R['effects'][n]['efecto'] for n in names]); m = len(ae)
-    o = np.argsort(ae); a = ae[o]; ns = [names[i] for i in o]
+    o = np.argsort(ae); a = ae[o]; ns = [_abbr_term(names[i], R['factores']) for i in o]
     pp = (np.arange(1, m+1)-0.5)/m
     q = stats.norm.ppf((1+pp)/2)
     fig, ax = plt.subplots(figsize=(8.5, 5))
     ax.scatter(q, a, color='steelblue', s=90, edgecolor='black', zorder=3)
     for qi, yi, ni in zip(q, a, ns):
-        ax.annotate(ni, (qi, yi), xytext=(5,3), textcoords='offset points', fontsize=8)
+        ax.annotate(ni, (qi, yi), xytext=(5,3), textcoords='offset points', fontsize=10, fontweight='bold')
     nm = a < L['ME']
     sl, ic = np.polyfit(q[nm] if nm.sum()>=2 else q, a[nm] if nm.sum()>=2 else a, 1)
     lx = np.array([q.min()-0.1, q.max()+0.1])

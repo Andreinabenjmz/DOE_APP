@@ -271,12 +271,15 @@ elif st.session_state.stage == 'full_model':
         fn_curv = ce._gen_curvatura(R)
         if fn_curv: c2.image(fn_curv, caption="Gráfico de Curvatura", use_container_width=True)
 
-
     st.markdown("### 3. Diagrama de Pareto")
     st.image(ce._gen_pareto(R), use_container_width=True)
-    
+
     st.markdown("### 4. Grafico semi-normal (Daniel / Lenth)")
     st.image(ce._gen_seminormal(R), use_container_width=True)
+    
+    # NUEVO: Leyenda de letras
+    leyenda = ", ".join([f"**{chr(65+i)}** = {f}" for i, f in enumerate(factores)])
+    st.caption(f"Leyenda de factores: {leyenda}")
 
     st.markdown("""
     ### Cómo leer estos gráficos (¡Muy importante!)
