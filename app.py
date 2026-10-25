@@ -277,17 +277,31 @@ elif st.session_state.stage == 'full_model':
 
 elif st.session_state.stage == 'refine':
     st.title("Paso 3 - Refinar modelo")
-    st.markdown("""
-    **Aqui construyes el modelo final.** 
-    - **Deja marcados** los terminos que identificaste como activos en el Pareto/semi-normal.
-    - **Desmarca** los terminos ruido.
-    - Luego presiona "Re-calcular".
-    """)
+    
     df = st.session_state.df
     factores = st.session_state.factores
     via = st.session_state.via
     R_full = st.session_state.R_full
     all_terms = list(R_full['effects'].keys())
+
+    # Explicaciones condicionales segun la via
+    if via == ce.VIA_3:
+        st.markdown("""
+        **En esta Vía 3, el método de Lenth ya ha hecho el trabajo por ti.**
+        
+        Como este diseño **no tiene réplicas**, no existe un "Error puro" tradicional para calcular los p-valores. Para solucionarlo, el programa toma todos los términos que son ruido, los junta y crea un **Error Pooled** (Error agrupado). Ese es el motor que permite calcular si los términos `[ACTIVO]` son realmente significativos.
+        
+        Por eso verás que los términos de `[RUIDO]` dicen **p=Pooled**. 
+        
+        *Nota importante:* En esta vía **no hay casillas para marcar o desmarcar**. El algoritmo ya decidió qué es activo y qué es ruido basándose en el umbral ME. Solo revisa la tabla y presiona el botón para avanzar al diagnóstico.
+        """)
+    else:
+        st.markdown("""
+        **Aqui construyes el modelo final.** 
+        - **Deja marcados** los terminos que identificaste como activos en el Pareto/semi-normal.
+        - **Desmarca** los terminos ruido.
+        - Luego presiona "Re-calcular".
+        """)
 
     st.markdown("### Terminos disponibles")
     selected = []
