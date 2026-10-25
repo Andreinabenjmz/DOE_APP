@@ -12,6 +12,36 @@ from docx import Document
 
 import calc_engine as ce
 
+from docx.shared import Inches
+
+def _insertar_tabla_word(doc, df_tabla):
+    """Convierte un DataFrame de Pandas en una tabla bonita de Word."""
+    cols = list(df_tabla.columns)
+    t = doc.add_table(rows=1, cols=len(cols))
+    t.style = 'Table Grid'
+    hdr_cells = t.rows[0].cells
+    for i, col_name in enumerate(cols):
+        hdr_cells[i].text = str(col_name)
+        for paragraph in hdr_cells[i].paragraphs:
+            for run in paragraph.runs:
+                run.font.bold = True
+                run.font.size = Pt(9)
+    
+    for _, row in df_tabla.iterrows():
+        row_cells = t.add_row().cells
+        for i, col_name in enumerate(cols):
+            val = row[col_name]
+            if pd.isna(val):
+                row_cells[i].text = "—"
+            elif isinstance(val, float):
+                row_cells[i].text = f"{val:.4f}"
+            else:
+                row_cells[i].text = str(val)
+            for paragraph in row_cells[i].paragraphs:
+                for run in paragraph.runs:
+                    run.font.size = Pt(9)
+    doc.add_paragraph() # Espacio después de la tabla
+
 st.set_page_config(page_title="DOE 2^k - Modo Minitab", layout="wide")
 
 for k, v in {
@@ -631,7 +661,8 @@ elif st.session_state.stage == 'report':
 
     st.markdown("### 2. Generar Archivos")
     if st.button("Generar descargas (Excel, Word, PNGs)", type='primary'):
-        with st.spinner("Generando archivos..."):
+        with st.spinner("Generando reporte completo..."):
+            # 1. Generar Tablas
             tablas = {'ANOVA': R['anova']}
             Rf = st.session_state.R_full
             if Rf:
@@ -642,54 +673,14 @@ elif st.session_state.stage == 'report':
                     for n, e in Rf['effects'].items()
                 ])
                 tablas['Efectos_todos'] = ef_tab
+
+            # 2. Generar Excel
             buf_xlsx = io.BytesIO()
             with pd.ExcelWriter(buf_xlsx) as w:
                 for hoja, t in tablas.items():
                     t.to_excel(w, sheet_name=hoja[:31], index=False)
-            doc = Document()
-            doc.add_heading(f"Informe de Analisis 2^k - {nombre}", 0)
-            doc.add_paragraph(f"Estudiante: {st.session_state.estudiante}")
-            doc.add_paragraph(f"Curso: {st.session_state.curso}")
-            doc.add_paragraph(f"Fecha: {date.today().strftime('%Y-%m-%d')}")
-            
-            doc.add_heading("1. Diseno experimental", level=1)
-            doc.add_paragraph(f"Factores: {', '.join(st.session_state.factores)}")
-            doc.add_paragraph(f"N = {len(df)}")
-            doc.add_paragraph("[Escribe la descripcion del diseno]")
-            
-            doc.add_heading("2. Analisis y resultados", level=1)
-            doc.add_heading("2.1. Terminos en el modelo final", level=2)
-            doc.add_paragraph(f"{', '.join(st.session_state.selected_terms or list(R['effects'].keys()))}")
-            
-            doc.add_heading("2.2. ANOVA", level=2)
-            doc.add_paragraph("[Pega la tabla ANOVA del Excel]")
-            
-            doc.add_heading("2.3. Efectos Principales", level=2)
-            doc.add_paragraph("Tabla de efectos principales (medias y efectos):")
-            doc.add_paragraph("[Pega la tabla de efectos principales del Excel]")
-            doc.add_paragraph("Interpretación de los efectos: [Escribe aquí qué significa cada efecto]")
-            
-            doc.add_heading("2.4. Condiciones Recomendadas (Ranking)", level=2)
-            doc.add_paragraph("[Pega la tabla de Ranking Top 5 del Excel]")
-            doc.add_paragraph("Recomendación operativa: [Escribe aquí la combinación que sugieres y por qué]")
-            
-            doc.add_heading("2.5. Ecuacion de regresion", level=2)
-            doc.add_paragraph(f"Beta 0 = {R['y_bar']:.4f}")
-            if eq: doc.add_paragraph(eq)
-            doc.add_paragraph("[Interpreta los coeficientes aqui]")
-            
-            doc.add_heading("2.6. Diagnostico", level=2)
-            doc.add_paragraph("[Analiza los 3 supuestos]")
-            
-            doc.add_heading("3. Conclusiones", level=1)
-            doc.add_paragraph("[Conclusiones numeradas]")
-            
-            doc.add_heading("4. Recomendaciones operativas", level=1)
-            doc.add_paragraph("[Que niveles fijar/evitar]")
-            
-            buf_word = io.BytesIO()
-            doc.save(buf_word)
 
+            # 3. GENERAR GRÁFICOS PRIMERO (para poder insertarlos en el Word)
             figs = {
                 'Pareto': ce._gen_pareto(R),
                 'SemiNormal': ce._gen_seminormal(R),
@@ -706,10 +697,90 @@ elif st.session_state.stage == 'report':
             if st.session_state.spec:
                 figs['Spec'] = ce._gen_spec(df, R, st.session_state.spec)
 
+            # 4. GENERAR WORD (Insertando todo en orden)
+            doc = Document()
+            doc.add_heading(f"Informe de Análisis 2^k - {nombre}", 0)
+            doc.add_paragraph(f"Estudiante: {st.session_state.estudiante}")
+            doc.add_paragraph(f"Curso: {st.session_state.curso}")
+            doc.add_paragraph(f"Fecha: {date.today().strftime('%Y-%m-%d')}")
+            
+            doc.add_heading("1. Diseño experimental", level=1)
+            doc.add_paragraph(f"Factores: {', '.join(st.session_state.factores)}")
+            doc.add_paragraph(f"N = {len(df)}")
+            doc.add_paragraph("Descripción del diseño: [Escribe aquí el contexto y los objetivos del experimento]")
+            
+            doc.add_heading("2. Análisis y resultados", level=1)
+            
+            doc.add_heading("2.1. ANOVA", level=2)
+            _insertar_tabla_word(doc, R['anova'])
+            doc.add_paragraph(f"R2 = {R['R2']:.4f}" + (f" | R2 ajustado = {R['R2_adj']:.4f}" if R.get('R2_adj') else ""))
+            doc.add_paragraph("Interpretación del ANOVA: [Explica qué términos son significativos]")
+            
+            doc.add_heading("2.2. Diagrama de Pareto", level=2)
+            if 'Pareto' in figs and os.path.exists(figs['Pareto']):
+                doc.add_picture(figs['Pareto'], width=Inches(6))
+            doc.add_paragraph("Interpretación: [Explica qué barras cruzan el umbral y por qué]")
+            
+            doc.add_heading("2.3. Gráfico semi-normal (Lenth)", level=2)
+            if 'SemiNormal' in figs and os.path.exists(figs['SemiNormal']):
+                doc.add_picture(figs['SemiNormal'], width=Inches(6))
+            doc.add_paragraph("Interpretación: [Explica qué puntos se despegan de la línea de referencia]")
+            
+            doc.add_heading("2.4. Efectos principales", level=2)
+            # Generar tabla de efectos principales para el Word
+            ef_princ_data = []
+            for f in st.session_state.factores:
+                ef_princ_data.append({
+                    'Factor': f,
+                    'Media Nivel Bajo (-1)': round(R['main_effects'][f]['low'], 4),
+                    'Media Nivel Alto (+1)': round(R['main_effects'][f]['high'], 4),
+                    'Efecto (+1 vs -1)': round(R['main_effects'][f]['eff'], 4)
+                })
+            _insertar_tabla_word(doc, pd.DataFrame(ef_princ_data))
+            if 'EfectosPrincipales' in figs and os.path.exists(figs['EfectosPrincipales']):
+                doc.add_picture(figs['EfectosPrincipales'], width=Inches(6))
+            doc.add_paragraph("Interpretación de los efectos: [Escribe aquí qué significa cada efecto en el proceso]")
+
+            if 'Interacciones' in figs and figs['Interacciones']:
+                doc.add_heading("2.5. Interacciones", level=2)
+                for fn_int in figs['Interacciones'][1:]: # Salta la imagen combinada
+                    if os.path.exists(fn_int):
+                        doc.add_picture(fn_int, width=Inches(5))
+                doc.add_paragraph("Interpretación: [Explica si las líneas son paralelas o se cruzan, y qué implican]")
+
+            if st.session_state.via == ce.VIA_2:
+                doc.add_heading("2.6. Curvatura y Diseño", level=2)
+                if 'Cubo' in figs and os.path.exists(figs['Cubo']):
+                    doc.add_picture(figs['Cubo'], width=Inches(4.5))
+                if 'Curvatura' in figs and os.path.exists(figs['Curvatura']):
+                    doc.add_picture(figs['Curvatura'], width=Inches(4.5))
+                doc.add_paragraph("Interpretación: [Explica si hay comportamiento no lineal]")
+
+            doc.add_heading("2.7. Diagnóstico de residuales", level=2)
+            if 'Residuales' in figs and os.path.exists(figs['Residuales']):
+                doc.add_picture(figs['Residuales'], width=Inches(6.5))
+            doc.add_paragraph("Interpretación: [Analiza los 3 supuestos: normalidad, homocedasticidad e independencia]")
+            
+            doc.add_heading("2.8. Ecuación de regresión", level=2)
+            doc.add_paragraph(f"Beta 0 = {R['y_bar']:.4f}")
+            if eq: doc.add_paragraph(eq, style='Intense Quote')
+            doc.add_paragraph("Interpretación de los coeficientes: [Explica qué significa cada término en la ecuación]")
+            
+            doc.add_heading("3. Conclusiones", level=1)
+            doc.add_paragraph("1. [Conclusión 1]")
+            doc.add_paragraph("2. [Conclusión 2]")
+            
+            doc.add_heading("4. Recomendaciones operativas", level=1)
+            doc.add_paragraph("[Qué niveles fijar o evitar para optimizar el proceso]")
+            
+            buf_word = io.BytesIO()
+            doc.save(buf_word)
+
+            # 5. Guardar en el estado y preparar ZIP
             st.session_state.excel_bytes = buf_xlsx.getvalue()
             st.session_state.word_bytes = buf_word.getvalue()
             st.session_state.figs_dict = figs
-        st.success("Archivos listos")
+        st.success("¡Reporte generado con tablas y gráficos insertados!")
 
     if st.session_state.excel_bytes:
         st.download_button("Descargar Tablas (Excel)", st.session_state.excel_bytes,
