@@ -239,21 +239,6 @@ def calcular_via3(df, factores):
     return R
 
 # ---------- Graficos ----------
-def _abbr_term(term, factores):
-    """Convierte un nombre largo (ej. Temperatura*Buffer) en letras (ej. A*D)."""
-    parts = term.split('*')
-    abbr = []
-    for p in parts:
-        if p == 'Curvatura':
-            abbr.append('Curv.')
-        else:
-            try:
-                idx = factores.index(p)
-                abbr.append(chr(65 + idx)) # 65 es 'A' en ASCII
-            except ValueError:
-                abbr.append(p)
-    return '*'.join(abbr)
-
 def _gen_pareto(R):
     terms = list(R['effects'].keys())
     if R['via'] == VIA_3:
@@ -287,13 +272,13 @@ def _gen_pareto(R):
 def _gen_seminormal(R):
     L = R['lenth']; names = list(R['effects'].keys())
     ae = np.abs([R['effects'][n]['efecto'] for n in names]); m = len(ae)
-    o = np.argsort(ae); a = ae[o]; ns = [_abbr_term(names[i], R['factores']) for i in o]
+    o = np.argsort(ae); a = ae[o]; ns = [names[i] for i in o]
     pp = (np.arange(1, m+1)-0.5)/m
     q = stats.norm.ppf((1+pp)/2)
     fig, ax = plt.subplots(figsize=(8.5, 5))
     ax.scatter(q, a, color='steelblue', s=90, edgecolor='black', zorder=3)
     for qi, yi, ni in zip(q, a, ns):
-        ax.annotate(ni, (qi, yi), xytext=(5,3), textcoords='offset points', fontsize=10, fontweight='bold')
+        ax.annotate(ni, (qi, yi), xytext=(5,3), textcoords='offset points', fontsize=8)
     nm = a < L['ME']
     sl, ic = np.polyfit(q[nm] if nm.sum()>=2 else q, a[nm] if nm.sum()>=2 else a, 1)
     lx = np.array([q.min()-0.1, q.max()+0.1])
@@ -306,17 +291,27 @@ def _gen_seminormal(R):
 
 def _gen_main_effects(R, spec):
     nf = len(R['factores'])
-    fig, axes = plt.subplots(1, nf, figsize=(4*nf, 4))
+    # EL TRUCO ESTÁ AQUÍ: sharey=True
+    fig, axes = plt.subplots(1, nf, figsize=(4*nf, 4), sharey=True)
+    
     if nf == 1: axes = [axes]
-    for ax, f in zip(axes, R['factores']):
+    
+    for i, (ax, f) in enumerate(zip(axes, R['factores'])):
         me = R['main_effects'][f]
         ax.plot([-1,1], [me['low'], me['high']], 'o-', markersize=10)
         ax.set_xticks([-1,1]); ax.set_xticklabels(['-1','+1'])
-        ax.set_xlabel(f); ax.set_ylabel('Media de Y')
+        ax.set_xlabel(f)
+        
+        # Solo poner el título del Eje Y en el primer gráfico
+        if i == 0:
+            ax.set_ylabel('Media de Y')
+            
         ax.set_title(f'Efecto principal: {f}'); ax.grid(alpha=0.3)
+        
         if spec:
             ax.axhspan(spec['target']-spec['tol'], spec['target']+spec['tol'],
                        alpha=0.1, color='green')
+                       
     plt.tight_layout()
     fn = 'efectos_principales.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
 
@@ -326,37 +321,34 @@ def _gen_interactions(R):
     if not sig: return []
 
     files = []
-    # 1. Guardar imagenes individuales (mas grandes)
-    for name in sig:
-        f1, f2 = name.split('*'); it = R['interactions'][(f1,f2)]
-        fig, ax = plt.subplots(figsize=(7, 5)) 
-        ax.plot([-1,1], [it['mll'], it['mhl']], 'o-', label=f'{f2}=-1')
-        ax.plot([-1,1], [it['mlh'], it['mhh']], 's--', label=f'{f2}=+1')
-        ax.set_xticks([-1,1]); ax.set_xticklabels([f'{f1}=-1', f'{f1}=+1'])
-        ax.set_xlabel(f1); ax.set_ylabel('Media de Y')
-        suf = ' (exploratoria)' if R['via'] == VIA_3 else (' (NO significativa)' if es_fb else '')
-        ax.set_title(f'Interaccion {name}{suf}'); ax.legend(); ax.grid(alpha=0.3)
-        plt.tight_layout()
-        fn_ind = f'interaccion_{f1}_x_{f2}.png'
-        plt.savefig(fn_ind, bbox_inches='tight'); plt.close()
-        files.append(fn_ind)
+    chunk_size = 3 # Máximo 3 gráficos por fila
 
-    # 2. Guardar el grafico combinado (para el reporte en Word)
-    fig, axes = plt.subplots(1, len(sig), figsize=(5*len(sig), 4))
-    if len(sig) == 1: axes = [axes]
-    for ax, name in zip(axes, sig):
-        f1, f2 = name.split('*'); it = R['interactions'][(f1,f2)]
-        ax.plot([-1,1], [it['mll'], it['mhl']], 'o-', label=f'{f2}=-1')
-        ax.plot([-1,1], [it['mlh'], it['mhh']], 's--', label=f'{f2}=+1')
-        ax.set_xticks([-1,1]); ax.set_xticklabels([f'{f1}=-1', f'{f1}=+1'])
-        ax.set_xlabel(f1); ax.set_ylabel('Media de Y')
-        suf = ' (exploratoria)' if R['via'] == VIA_3 else (' (NO significativa)' if es_fb else '')
-        ax.set_title(f'Interaccion {name}{suf}'); ax.legend(); ax.grid(alpha=0.3)
-    plt.tight_layout()
-    fn_all = 'interacciones_todas.png'; plt.savefig(fn_all, bbox_inches='tight'); plt.close()
-    
-    # Retornamos una lista con todas las imagenes
-    return [fn_all] + files
+    # Procesar en bloques de 3
+    for i in range(0, len(sig), chunk_size):
+        chunk = sig[i:i+chunk_size]
+        
+        # Crear figura para el bloque actual
+        fig, axes = plt.subplots(1, len(chunk), figsize=(5*len(chunk), 4))
+        if len(chunk) == 1: 
+            axes = [axes]
+            
+        for ax, name in zip(axes, chunk):
+            f1, f2 = name.split('*'); it = R['interactions'][(f1,f2)]
+            ax.plot([-1,1], [it['mll'], it['mhl']], 'o-', label=f'{f2}=-1')
+            ax.plot([-1,1], [it['mlh'], it['mhh']], 's--', label=f'{f2}=+1')
+            ax.set_xticks([-1,1]); ax.set_xticklabels([f'{f1}=-1', f'{f1}=+1'])
+            ax.set_xlabel(f1); ax.set_ylabel('Media de Y')
+            suf = ' (exploratoria)' if R['via'] == VIA_3 else (' (NO significativa)' if es_fb else '')
+            ax.set_title(f'Interaccion {name}{suf}'); ax.legend(); ax.grid(alpha=0.3)
+            
+        plt.tight_layout()
+        # Guardar la imagen del bloque (ej. interacciones_1.png, interacciones_2.png)
+        fn_bloque = f'interacciones_grupo_{i//chunk_size + 1}.png'
+        plt.savefig(fn_bloque, bbox_inches='tight'); plt.close()
+        files.append(fn_bloque)
+
+    return files
+
 
 def _gen_residuales(df, R):
     terms = R.get('terms_included', list(R['effects'].keys()))

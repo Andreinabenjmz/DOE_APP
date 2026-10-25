@@ -12,7 +12,7 @@ from docx import Document
 
 import calc_engine as ce
 
-from docx.shared import Inches, Pt
+from docx.shared import Inches
 
 def _insertar_tabla_word(doc, df_tabla):
     """Convierte un DataFrame de Pandas en una tabla bonita de Word."""
@@ -141,24 +141,24 @@ with st.sidebar:
             with st.expander("⚙️ Configurar Niveles (-1 / +1)", expanded=False):
                 st.markdown("Elige qué nivel corresponde al **bajo (-1)** y cuál al **alto (+1)**.")
                 for c in cols:
-                    nombre_mostrar = mapping_nombres.get(c, c)
-                    vals = list(dict.fromkeys(raw[c].dropna().tolist()))
+                    col_real = mapping_nombres.get(c, c)
+                    vals = list(dict.fromkeys(raw[col_real].dropna().tolist()))
                     
                     if set(vals).issubset({-1,0,1,-1.0,0.0,1.0}):
                         continue
                         
                     if len(vals) == 2:
-                        v_bajo = st.selectbox(f"'{nombre_mostrar}' - Nivel BAJO (-1):", vals, index=0, key=f"low_{c}")
+                        v_bajo = st.selectbox(f"'{col_real}' - Nivel BAJO (-1):", vals, index=0, key=f"low_{c}")
                         v_alto = [v for v in vals if v != v_bajo][0]
                         st.caption(f"→ Nivel ALTO (+1): **{v_alto}**")
-                        mapeos_niveles[nombre_mostrar] = {v_bajo: -1, v_alto: 1}
+                        mapeos_niveles[col_real] = {v_bajo: -1, v_alto: 1}
                         
                     elif len(vals) == 3:
-                        v_bajo = st.selectbox(f"'{nombre_mostrar}' - Nivel BAJO (-1):", vals, index=0, key=f"low_{c}")
-                        v_alto = st.selectbox(f"'{nombre_mostrar}' - Nivel ALTO (+1):", [v for v in vals if v != v_bajo], index=0, key=f"high_{c}")
+                        v_bajo = st.selectbox(f"'{col_real}' - Nivel BAJO (-1):", vals, index=0, key=f"low_{c}")
+                        v_alto = st.selectbox(f"'{col_real}' - Nivel ALTO (+1):", [v for v in vals if v != v_bajo], index=0, key=f"high_{c}")
                         v_mid = [v for v in vals if v != v_bajo and v != v_alto][0]
                         st.caption(f"→ Centro (0): **{v_mid}**")
-                        mapeos_niveles[nombre_mostrar] = {v_bajo: -1, v_mid: 0, v_alto: 1}
+                        mapeos_niveles[col_real] = {v_bajo: -1, v_mid: 0, v_alto: 1}
             st.markdown("---")
 
         via = st.radio("Via",
@@ -184,9 +184,6 @@ with st.sidebar:
                 if mapping_nombres:
                     raw = raw.rename(columns=mapping_nombres)
                     cols = [mapping_nombres.get(c, c) for c in cols]
-                
-                # Guardar copia original con nombres nuevos (para tablas 1.2 y ranking)
-                st.session_state.raw_renamed = raw.copy()
 
                 rp = raw.copy()
                 
@@ -211,8 +208,6 @@ with st.sidebar:
                 st.session_state.df = df
                 st.session_state.via = via
                 st.session_state.factores = cols
-                # NUEVO: Guardar los niveles elegidos
-                st.session_state.niveles_mapeo = mapeos_niveles 
                 st.session_state.respuesta = resp
                 st.session_state.spec = spec
                 st.session_state.nombre = nombre
@@ -279,42 +274,10 @@ elif st.session_state.stage == 'design':
     c4.metric("Via", via)
     
     st.info(f"**De donde viene N:** {expl}")
-    
-    # --- Tabla 1.1: Clasificación de Factores y Niveles ---
-    st.markdown("### 1.1. Clasificación de Factores y Niveles")
-    filas_niv = []
-    mapeo_guardado = st.session_state.get('niveles_mapeo', {})
-    for i, f in enumerate(factores):
-        simbolo = chr(65 + i)
-        map_f = mapeo_guardado.get(f, {})
-        low_val = next((k for k, v in map_f.items() if v == -1), "-1")
-        high_val = next((k for k, v in map_f.items() if v == 1), "+1")
-        filas_niv.append({
-            'Factor': f, 'Símbolo': simbolo,
-            'Nivel Bajo (-1)': low_val, 'Nivel Alto (+1)': high_val
-        })
-    st.dataframe(pd.DataFrame(filas_niv), use_container_width=True)
-
-    # --- Tabla 1.2: Datos del Experimento ---
-    st.markdown("### 1.2. Datos del experimento")
-    raw_orig = st.session_state.raw_renamed
-    resp_cols = st.session_state.respuesta
-    tabla_datos = raw_orig.copy()
-    tabla_datos.insert(0, 'N', range(1, len(tabla_datos)+1))
-    tabla_datos['Total'] = tabla_datos[resp_cols].sum(axis=1)
-    tabla_datos['Media'] = tabla_datos[resp_cols].mean(axis=1)
-    tabla_datos['Varianza'] = tabla_datos[resp_cols].var(axis=1)
-    cols_mostrar = ['N'] + factores + resp_cols + ['Total', 'Media', 'Varianza']
-    tabla_datos = tabla_datos[cols_mostrar]
-    st.dataframe(tabla_datos.round(4), use_container_width=True)
-    st.write(f"**Gran media = {df['Y'].mean():.4f}**")
-
-    # --- Tabla 1.3: Combinaciones del diseño ---
-    st.markdown("### Combinaciones del diseno")
     cond = df[df['Curvatura']==0][factores].drop_duplicates().reset_index(drop=True)
     cond.insert(0, 'Condicion', range(1, len(cond)+1))
+    st.markdown("### Combinaciones del diseno")
     st.dataframe(cond, use_container_width=True)
-
     if st.button("Ir a Modelo completo", type='primary'):
         st.session_state.stage = 'full_model'; st.rerun()
 
@@ -589,30 +552,29 @@ elif st.session_state.stage == 'diagnostics':
     Estas son las combinaciones que dieron los mejores resultados en el experimento. 
     *(Ordenadas de mayor a menor según la media de Y)*
     """)
-
-    # 1. Tomar los datos originales para mantener el orden de las corridas
-    raw_orig = st.session_state.raw_renamed
-    resp_cols = st.session_state.respuesta
     
-    cond_medias = raw_orig[st.session_state.factores].copy()
-    # Asignar número de corrida basado en la fila original de Excel
-    cond_medias.insert(0, 'Corrida', range(1, len(cond_medias) + 1))
-    # Calcular la media de las respuestas
-    cond_medias['Y'] = raw_orig[resp_cols].mean(axis=1)
+    # 1. Calcular medias por combinación
+    cond_medias = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
     
-    # 2. Ordenar y sacar el Top 5
+    # 2. Agregar el número de corrida (1 al N, en el orden original)
+    cond_medias.insert(0, 'Corrida', range(1, len(cond_medias)+1))
+    
+    # 3. Ordenar y sacar el Top 5
     cond_medias = cond_medias.sort_values(by='Y', ascending=False).head(5).reset_index(drop=True)
     
-    # 3. Construir la tabla
+    # 4. Construir la tabla
     ranking_data = []
     for idx, row in cond_medias.iterrows():
         fila = {'Posición': idx + 1, 'Corrida': int(row['Corrida'])}
         for f in st.session_state.factores:
-            fila[f] = row[f]  # <-- Dejar el valor original (300, X, Sin, etc.)
+            val = row[f]
+            if val == -1: fila[f] = "Nivel Bajo (-1)"
+            elif val == 1: fila[f] = "Nivel Alto (+1)"
+            else: fila[f] = "Centro (0)"
         fila['Media de Y'] = round(row['Y'], 4)
         ranking_data.append(fila)
     
-    st.dataframe(pd.DataFrame(ranking_data), use_container_width=True)   
+    st.dataframe(pd.DataFrame(ranking_data), use_container_width=True)
 
     with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
         st.markdown("""
@@ -632,14 +594,9 @@ elif st.session_state.stage == 'diagnostics':
 
     fns_int = ce._gen_interactions(R)
     if fns_int:
-        # Si por alguna razón devuelve un solo texto (versión vieja de engine)
-        if isinstance(fns_int, str):
-            st.image(fns_int, use_container_width=True)
-        # Si devuelve la lista (versión nueva), muestra las individuales
-        else:
-            for fn in fns_int[1:]: 
-                if os.path.exists(fn):
-                    st.image(fn, use_container_width=True)
+        for fn in fns_int:
+            if os.path.exists(fn):
+                st.image(fn, use_container_width=True)
     else:
         st.info("Ninguna interaccion significativa en el modelo.")
 
@@ -747,53 +704,11 @@ elif st.session_state.stage == 'report':
             doc.add_paragraph(f"Curso: {st.session_state.curso}")
             doc.add_paragraph(f"Fecha: {date.today().strftime('%Y-%m-%d')}")
             
-
             doc.add_heading("1. Diseño experimental", level=1)
             doc.add_paragraph(f"Factores: {', '.join(st.session_state.factores)}")
             doc.add_paragraph(f"N = {len(df)}")
             doc.add_paragraph("Descripción del diseño: [Escribe aquí el contexto y los objetivos del experimento]")
             
-            # --- NUEVO: Tabla de Factores en Word ---
-            doc.add_heading("1.1. Clasificación de Factores y Niveles", level=2)
-            filas_niv_word = []
-            mapeo_guardado_word = st.session_state.get('niveles_mapeo', {})
-            for i, f in enumerate(st.session_state.factores):
-                simbolo = chr(65 + i)
-                map_f = mapeo_guardado_word.get(f, {})
-                low_val = next((k for k, v in map_f.items() if v == -1), "-1")
-                high_val = next((k for k, v in map_f.items() if v == 1), "+1")
-                filas_niv_word.append({
-                    'Factor': f, 'Símbolo': simbolo,
-                    'Nivel Bajo (-1)': low_val, 'Nivel Alto (+1)': high_val
-                })
-            _insertar_tabla_word(doc, pd.DataFrame(filas_niv_word))
-            # ----------------------------------------
-
-            # --- NUEVO: Tabla de Datos del Experimento en Word ---
-            doc.add_heading("1.2. Datos del experimento", level=2)
-            doc.add_paragraph("Resumen de las mediciones por cada corrida:")
-            
-            # Obtener los datos originales y las respuestas
-            raw_orig = st.session_state.raw_renamed
-            resp_cols = st.session_state.respuesta
-            
-            tabla_datos_word = raw_orig.copy()
-            tabla_datos_word.insert(0, 'N', range(1, len(tabla_datos_word)+1))
-            tabla_datos_word['Total'] = tabla_datos_word[resp_cols].sum(axis=1)
-            tabla_datos_word['Media'] = tabla_datos_word[resp_cols].mean(axis=1)
-            tabla_datos_word['Varianza'] = tabla_datos_word[resp_cols].var(axis=1)
-            
-            # Seleccionar y ordenar columnas para que se vea bonito
-            cols_mostrar = ['N'] + st.session_state.factores + resp_cols + ['Total', 'Media', 'Varianza']
-            tabla_datos_word = tabla_datos_word[cols_mostrar]
-            
-            # Insertar tabla en el Word
-            _insertar_tabla_word(doc, tabla_datos_word)
-            doc.add_paragraph(f"Gran media = {df['Y'].mean():.4f}")
-            # -----------------------------------------------------
-
-            doc.add_heading("2. Análisis y resultados", level=1)
-
             doc.add_heading("2. Análisis y resultados", level=1)
             
             doc.add_heading("2.1. ANOVA", level=2)
@@ -829,33 +744,32 @@ elif st.session_state.stage == 'report':
             # --- NUEVO: Ranking Top 5 ---
             doc.add_heading("2.5. Condiciones Recomendadas (Ranking)", level=2)
             
-            # Calcular el ranking usando los datos originales
-            raw_orig_word = st.session_state.raw_renamed
-            resp_cols_word = st.session_state.respuesta
-            
-            cond_medias_word = raw_orig_word[st.session_state.factores].copy()
-            cond_medias_word.insert(0, 'Corrida', range(1, len(cond_medias_word) + 1))
-            cond_medias_word['Y'] = raw_orig_word[resp_cols_word].mean(axis=1)
-            
+            # Calcular el ranking para el Word
+            cond_medias_word = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
+            cond_medias_word.insert(0, 'Corrida', range(1, len(cond_medias_word)+1))
             cond_medias_word = cond_medias_word.sort_values(by='Y', ascending=False).head(5).reset_index(drop=True)
-
+            
             # Preparar la tabla para Word
             tabla_word = cond_medias_word.copy()
             tabla_word.insert(0, 'Posición', range(1, len(tabla_word)+1))
+            
+            # Reemplazar -1 y 1 por texto más amigable
+            for f in st.session_state.factores:
+                tabla_word[f] = tabla_word[f].apply(lambda x: "Bajo (-1)" if x==-1 else ("Alto (+1)" if x==1 else "Centro (0)"))
                 
             tabla_word = tabla_word.rename(columns={'Y': 'Media de Y'})
             
             _insertar_tabla_word(doc, tabla_word)
-
             doc.add_paragraph("Recomendación operativa: [Escribe aquí la combinación que sugieres y por qué]")
             # -----------------------------
 
             if 'Interacciones' in figs and figs['Interacciones']:
                 doc.add_heading("2.6. Interacciones", level=2)
-                for fn_int in figs['Interacciones'][1:]: # Salta la imagen combinada
+                for fn_int in figs['Interacciones']:
                     if os.path.exists(fn_int):
-                        doc.add_picture(fn_int, width=Inches(5))
+                        doc.add_picture(fn_int, width=Inches(6)) # Ancho ideal para Word
                 doc.add_paragraph("Interpretación: [Explica si las líneas son paralelas o se cruzan, y qué implican]")
+
 
             if st.session_state.via == ce.VIA_2:
                 doc.add_heading("2.7. Curvatura y Diseño", level=2)
