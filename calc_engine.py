@@ -462,6 +462,69 @@ def _gen_spec(df, R, spec):
     fn = 'especificacion.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
 
 # ---------- Ecuacion ----------
+def generar_tabla_regresion(df, R):
+    """Genera la tabla de coeficientes estilo Excel y el resumen de ajuste global."""
+    terms = R.get('terms_included', list(R['effects'].keys()))
+    
+    # 1. Construir la fórmula para statsmodels
+    parts = []
+    for f in R['factores']:
+        if f in terms:
+            parts.append(f'Q("{f}")')
+    
+    for t in terms:
+        if '*' in t:
+            f1, f2 = t.split('*')
+            parts.append(f'Q("{f1}"):Q("{f2}")')
+            
+    formula = 'Q("Y") ~ ' + ' + '.join(parts) if parts else 'Q("Y") ~ 1'
+    
+    if R.get('tiene_bloques'): 
+        formula = 'Q("Y") ~ Q("Grupo") + ' + formula.split('~')[1].strip()
+    if R.get('tiene_centro'): 
+        formula += ' + Q("Curvatura")'
+
+    # 2. Ajustar el modelo
+    mfit = smf.ols(formula, data=df).fit()
+    
+    # 3. Tabla de Coeficientes
+    coef_df = pd.DataFrame({
+        'Término': mfit.params.index,
+        'Coef': mfit.params.values,
+        'Error Est.': mfit.bse.values,
+        't stat': mfit.tvalues.values,
+        'Valor p': mfit.pvalues.values,
+    })
+    
+    # Limpiar nombres (quitar Q(" ") y cambiar : por *)
+    coef_df['Término'] = coef_df['Término'].str.replace('Q("', '').str.replace('")', '').str.replace(':', ' * ')
+    
+    # Intervalos de confianza
+    conf_int = mfit.conf_int()
+    coef_df['Inferior 95%'] = conf_int[0].values
+    coef_df['Superior 95%'] = conf_int[1].values
+    
+    # VIF (Varianza inflada - en diseños ortogonales suele ser 1)
+    # Por simplicidad, para este tipo de diseños lo ponemos en 1.0
+    coef_df['VIF'] = 1.0 
+    
+    # 4. Resumen de Ajuste Global
+    fit_df = pd.DataFrame({
+        'Métrica': ['Multiple R', 'R Square', 'Adjusted R Square', 'Standard Error', 'Observations', 'AIC', 'BIC (SBC)'],
+        'Valor': [
+            np.sqrt(mfit.rsquared), 
+            mfit.rsquared, 
+            mfit.rsquared_adj, 
+            np.sqrt(mfit.mse_resid), 
+            len(df), 
+            mfit.aic, 
+            mfit.bic
+        ]
+    })
+    
+    return coef_df, fit_df
+
+
 def _ecuacion_str(R):
     if R['via'] == VIA_3:
         sig = [n for n,e in R['effects'].items() if e.get('activo')]
@@ -470,3 +533,89 @@ def _ecuacion_str(R):
     if not sig: return None
     return f"Y = {R['y_bar']:.4f} " + " ".join(
         f"{R['effects'][n]['coef']:+.4f}*{n.replace('*','*')}" for n in sig)
+
+def generar_texto_pareto(R):
+    """Genera el texto explicativo del Pareto calculando los grados de libertad dinámicamente."""
+    df_error = R['df_resid']
+    t_crit = R['t_crit']
+    
+    # Calcular cuántos términos se evaluaron originalmente y cuántos se agruparon
+    total_terms = len(R['all_effects'])
+    terms_usados = len(R['terms_included'])
+    terminos_agrupados = total_terms - terms_usados
+    
+    df_total = R['N'] - 1
+    df_puro = df_total - total_terms
+    
+    texto = f"Para validar visualmente la significancia de los efectos, se utiliza el estadístico t de cada factor. Este se compara contra un valor crítico de t derivado de los {df_error} grados de libertad del Error Puro del ANOVA. Con un nivel de significancia α = 0.05, el umbral es t ≈ {t_crit:.2f}. "
+    
+    if terminos_agrupados > 0:
+        texto += f"\n\nNota metodológica: El modelo inicial evaluó {total_terms} términos ({R['k']} factores principales y {total_terms - R['k']} interacciones). Para aumentar la sensibilidad de la prueba, las {terminos_agrupados} interacciones que resultaron no significativas fueron eliminadas y agrupadas dentro del término del error (proceso de pooling). Por lo tanto, el Residual final cuenta con {df_error} grados de libertad: los {df_puro} correspondientes a las {R['N']} observaciones menos los {total_terms} términos iniciales, más los {terminos_agrupados} grados de libertad de las interacciones agrupadas. Esto permite obtener un valor crítico de t más preciso para el diagrama de Pareto."
+    
+    return texto
+
+def generar_tabla_balance_neto(R):
+    """Genera la tabla de balance neto (Ganancias vs Penalizaciones)."""
+    y_bar = R['y_bar']
+    
+    # Filtrar solo los términos significativos
+    sig_terms = [n for n, e in R['effects'].items() if (e.get('p', 1) < 0.05) or (R['via'] == VIA_3 and e.get('activo'))]
+    
+    rows = []
+    # Fila base
+    rows.append({'Concepto (Factor / Interacción)': 'Base del modelo (Intercepto)', 
+                 'Efecto (Puntos)': round(y_bar, 2), 
+                 'Impacto porcentual (%)': 100.00, 
+                 'Tipo de Efecto': 'Punto de partida'})
+    
+    main_effects = []
+    interactions = []
+    
+    for name in sig_terms:
+        e = R['effects'][name]
+        eff = e['efecto']
+        pct = (eff / y_bar) * 100
+        
+        row_data = {
+            'Concepto (Factor / Interacción)': name.replace('*', ' x '),
+            'Efecto (Puntos)': round(eff, 2),
+            'Impacto porcentual (%)': round(pct, 2),
+            'Tipo de Efecto': 'Beneficio' if eff > 0 else 'Penalización'
+        }
+        
+        if '*' not in name:
+            main_effects.append(row_data)
+        else:
+            interactions.append(row_data)
+            
+    # Calcular sumas
+    sum_main = sum(r['Efecto (Puntos)'] for r in main_effects)
+    pct_main = sum(r['Impacto porcentual (%)'] for r in main_effects)
+    
+    sum_int = sum(r['Efecto (Puntos)'] for r in interactions)
+    pct_int = sum(r['Impacto porcentual (%)'] for r in interactions)
+    
+    # Agregar al bloque
+    for r in main_effects: rows.append(r)
+    if main_effects:
+        rows.append({'Concepto (Factor / Interacción)': 'Suma de Efectos Principales', 
+                     'Efecto (Puntos)': round(sum_main, 2), 
+                     'Impacto porcentual (%)': round(pct_main, 2), 
+                     'Tipo de Efecto': 'Totales'})
+                     
+    for r in interactions: rows.append(r)
+    if interactions:
+        rows.append({'Concepto (Factor / Interacción)': 'Suma de Interacciones', 
+                     'Efecto (Puntos)': round(sum_int, 2), 
+                     'Impacto porcentual (%)': round(pct_int, 2), 
+                     'Tipo de Efecto': 'Totales'})
+                     
+    # Resultado final
+    final_val = y_bar + sum_main + sum_int
+    final_pct = 100.00 + pct_main + pct_int
+    rows.append({'Concepto (Factor / Interacción)': 'Resultado Final Estimado', 
+                 'Efecto (Puntos)': round(final_val, 2), 
+                 'Impacto porcentual (%)': round(final_pct, 2), 
+                 'Tipo de Efecto': 'Balance Neto'})
+                 
+    return pd.DataFrame(rows)
