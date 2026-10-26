@@ -718,7 +718,16 @@ elif st.session_state.stage == 'report':
             }
 
             # Usar el orden elegido en el paso anterior
-            fns_int = ce._gen_interactions(R, custom_order=st.session_state.get('orden_interacciones', []))
+
+            # Obtener el orden de forma segura
+            orden_guardado = st.session_state.get('orden_interacciones', None)
+            
+            # Si el orden guardado no existe o está vacío, usar el orden por defecto
+            if not orden_guardado:
+                orden_guardado = [n for n in R['effects'] if len(n.split('*'))==2]
+                
+            fns_int = ce._gen_interactions(R, custom_order=orden_guardado)
+
             if fns_int: figs['Interacciones'] = fns_int
             if st.session_state.via == ce.VIA_2:
                 fn_cub = ce._gen_cubo(R)
