@@ -300,6 +300,25 @@ elif st.session_state.stage == 'full_model':
             st.session_state.R_full = R
     R = st.session_state.R_full
 
+    # --- RESTAURADO: Ecuación y Coeficientes antes del ANOVA ---
+    st.markdown("### 1. Ecuación y Coeficientes de Regresión")
+    eq = ce._ecuacion_str(R)
+    if eq:
+        st.markdown(f"**Ecuación Ajustada:**\n```\n{eq}\n```")
+    
+    try:
+        coef_df, fit_df = ce.generar_tabla_regresion(df, R)
+        st.markdown("**Tabla de Coeficientes (Efectos individuales):**")
+        st.dataframe(coef_df.round(4), use_container_width=True)
+        
+        st.markdown("**Resumen del Ajuste Global:**")
+        st.dataframe(fit_df.round(4), use_container_width=True)
+    except Exception as e:
+        st.warning(f"No se pudo generar la tabla de coeficientes: {e}")
+        
+    st.markdown("---")
+    # -------------------------------------------------------------
+
     st.markdown("### 1. Tabla ANOVA")
     st.markdown("""
     Esta tabla es el **corazón del análisis**. Compara la variación que produce cada factor (la "señal") contra el ruido del experimento.
@@ -766,6 +785,14 @@ elif st.session_state.stage == 'report':
             _insertar_tabla_word(doc, R['anova'])
             doc.add_paragraph(f"R2 = {R['R2']:.4f}" + (f" | R2 ajustado = {R['R2_adj']:.4f}" if R.get('R2_adj') else ""))
             doc.add_paragraph("Interpretación del ANOVA: [Explica qué términos son significativos]")
+
+            doc.add_heading("2.1.1. Tabla de Coeficientes", level=3)
+            try:
+                coef_df, fit_df = ce.generar_tabla_regresion(df, R)
+                _insertar_tabla_word(doc, coef_df.round(4))
+            except Exception as e:
+                doc.add_paragraph(f"No se pudo generar la tabla de coeficientes: {e}")
+
             
             doc.add_heading("2.2. Diagrama de Pareto", level=2)
             if 'Pareto' in figs and os.path.exists(figs['Pareto']):
