@@ -315,16 +315,11 @@ def _gen_main_effects(R, spec):
     plt.tight_layout()
     fn = 'efectos_principales.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
 
-
-def _gen_interactions(R, custom_order=None):
+def _gen_interactions(R):
     es_fb = False
     sig = [n for n in R['effects'] if len(n.split('*'))==2]
-    
-    # NUEVO: Si el usuario definió un orden personalizado, lo usamos
-    if custom_order and len(custom_order) > 0:
-        sig = custom_order
-        
     if not sig: return []
+
     files = []
     chunk_size = 3 # Máximo 3 gráficos por fila
 
@@ -462,6 +457,17 @@ def _gen_spec(df, R, spec):
     fn = 'especificacion.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
 
 # ---------- Ecuacion ----------
+def _ecuacion_str(R):
+    if R['via'] == VIA_3:
+        sig = [n for n,e in R['effects'].items() if e.get('activo')]
+    else:
+        sig = [n for n,e in R['effects'].items() if e.get('p',1)<0.05]
+    if not sig: return None
+    return f"Y = {R['y_bar']:.4f} " + " ".join(
+        f"{R['effects'][n]['coef']:+.4f}*{n.replace('*','*')}" for n in sig)
+
+# ---------- Funciones de Reporte y Balance ----------
+
 def generar_tabla_regresion(df, R):
     """Genera la tabla de coeficientes estilo Excel y el resumen de ajuste global."""
     terms = R.get('terms_included', list(R['effects'].keys()))
@@ -474,7 +480,6 @@ def generar_tabla_regresion(df, R):
     
     for t in terms:
         if '*' in t:
-            # CORRECCIÓN AQUÍ: Manejar interacciones de 2, 3 o 4 vías
             factors_in_term = t.split('*')
             term_formula = ':'.join(f'Q("{f}")' for f in factors_in_term)
             parts.append(term_formula)
@@ -506,7 +511,7 @@ def generar_tabla_regresion(df, R):
     coef_df['Inferior 95%'] = conf_int[0].values
     coef_df['Superior 95%'] = conf_int[1].values
     
-    # VIF (Varianza inflada - en diseños ortogonales suele ser 1)
+    # VIF (Varianza inflada)
     coef_df['VIF'] = 1.0 
     
     # 4. Resumen de Ajuste Global
@@ -526,21 +531,11 @@ def generar_tabla_regresion(df, R):
     return coef_df, fit_df
 
 
-def _ecuacion_str(R):
-    if R['via'] == VIA_3:
-        sig = [n for n,e in R['effects'].items() if e.get('activo')]
-    else:
-        sig = [n for n,e in R['effects'].items() if e.get('p',1)<0.05]
-    if not sig: return None
-    return f"Y = {R['y_bar']:.4f} " + " ".join(
-        f"{R['effects'][n]['coef']:+.4f}*{n.replace('*','*')}" for n in sig)
-
 def generar_texto_pareto(R):
     """Genera el texto explicativo del Pareto calculando los grados de libertad dinámicamente."""
     df_error = R['df_resid']
     t_crit = R['t_crit']
     
-    # Calcular cuántos términos se evaluaron originalmente y cuántos se agruparon
     total_terms = len(R['all_effects'])
     terms_usados = len(R['terms_included'])
     terminos_agrupados = total_terms - terms_usados
@@ -555,15 +550,15 @@ def generar_texto_pareto(R):
     
     return texto
 
-def generar_tabla_balance_neto(R):
-    """Genera la tabla de balance neto (Ganancias vs Penalizaciones)."""
+
+def generar_tabla_balance_neto(R, objetivo='max'):
+    """Genera la tabla de balance neto adaptada al objetivo (maximizar o minimizar)."""
     y_bar = R['y_bar']
     
     # Filtrar solo los términos significativos
     sig_terms = [n for n, e in R['effects'].items() if (e.get('p', 1) < 0.05) or (R['via'] == VIA_3 and e.get('activo'))]
     
     rows = []
-    # Fila base
     rows.append({'Concepto (Factor / Interacción)': 'Base del modelo (Intercepto)', 
                  'Efecto (Puntos)': round(y_bar, 2), 
                  'Impacto porcentual (%)': 100.00, 
@@ -577,11 +572,19 @@ def generar_tabla_balance_neto(R):
         eff = e['efecto']
         pct = (eff / y_bar) * 100
         
+        # Lógica de beneficio según el objetivo
+        if objetivo == 'max':
+            es_beneficio = eff > 0
+            tipo = 'Beneficio' if es_beneficio else 'Penalización'
+        else:
+            es_beneficio = eff < 0 # Si busco minimizar, un efecto negativo es bueno
+            tipo = 'Beneficio (Reduce)' if es_beneficio else 'Penalización (Aumenta)'
+        
         row_data = {
             'Concepto (Factor / Interacción)': name.replace('*', ' x '),
             'Efecto (Puntos)': round(eff, 2),
             'Impacto porcentual (%)': round(pct, 2),
-            'Tipo de Efecto': 'Beneficio' if eff > 0 else 'Penalización'
+            'Tipo de Efecto': tipo
         }
         
         if '*' not in name:
@@ -589,14 +592,11 @@ def generar_tabla_balance_neto(R):
         else:
             interactions.append(row_data)
             
-    # Calcular sumas
     sum_main = sum(r['Efecto (Puntos)'] for r in main_effects)
     pct_main = sum(r['Impacto porcentual (%)'] for r in main_effects)
-    
     sum_int = sum(r['Efecto (Puntos)'] for r in interactions)
     pct_int = sum(r['Impacto porcentual (%)'] for r in interactions)
     
-    # Agregar al bloque
     for r in main_effects: rows.append(r)
     if main_effects:
         rows.append({'Concepto (Factor / Interacción)': 'Suma de Efectos Principales', 
@@ -611,7 +611,6 @@ def generar_tabla_balance_neto(R):
                      'Impacto porcentual (%)': round(pct_int, 2), 
                      'Tipo de Efecto': 'Totales'})
                      
-    # Resultado final
     final_val = y_bar + sum_main + sum_int
     final_pct = 100.00 + pct_main + pct_int
     rows.append({'Concepto (Factor / Interacción)': 'Resultado Final Estimado', 

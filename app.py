@@ -12,7 +12,7 @@ from docx import Document
 
 import calc_engine as ce
 
-from docx.shared import Inches, Pt
+from docx.shared import Inches
 
 def _insertar_tabla_word(doc, df_tabla):
     """Convierte un DataFrame de Pandas en una tabla bonita de Word."""
@@ -164,6 +164,7 @@ with st.sidebar:
         via = st.radio("Via",
                        options=[ce.VIA_1, ce.VIA_2, ce.VIA_3],
                        format_func=lambda v: f"{ce.VIA_INFO[v]['nombre']}")
+        objetivo = st.radio("Objetivo del análisis:", ["Maximizar la respuesta", "Minimizar la respuesta"], index=0)
 
         use_spec = st.checkbox("Especificacion (target +/- tol)")
         spec = None
@@ -207,6 +208,7 @@ with st.sidebar:
                 # 4. Guardar en el estado de la sesión y avanzar al Paso 1
                 st.session_state.df = df
                 st.session_state.via = via
+                st.session_state.objetivo = 'max' if objetivo == "Maximizar la respuesta" else 'min'
                 st.session_state.factores = cols
                 st.session_state.respuesta = resp
                 st.session_state.spec = spec
@@ -297,21 +299,6 @@ elif st.session_state.stage == 'full_model':
                 R = ce.calcular_via3(df, factores)
             st.session_state.R_full = R
     R = st.session_state.R_full
-
-    # --- NUEVO: Mostrar Ecuación y Coeficientes antes del ANOVA ---
-    st.markdown("### 1. Ecuación y Coeficientes de Regresión")
-    eq = ce._ecuacion_str(R)
-    if eq:
-        st.markdown(f"**Ecuación Ajustada:**\n```\n{eq}\n```")
-    
-    coef_df, fit_df = ce.generar_tabla_regresion(df, R)
-    st.markdown("**Tabla de Coeficientes (Efectos individuales):**")
-    st.dataframe(coef_df.round(4), use_container_width=True)
-    
-    st.markdown("**Resumen del Ajuste Global:**")
-    st.dataframe(fit_df.round(4), use_container_width=True)
-    st.markdown("---")
-    # -------------------------------------------------------------
 
     st.markdown("### 1. Tabla ANOVA")
     st.markdown("""
@@ -575,7 +562,9 @@ elif st.session_state.stage == 'diagnostics':
     cond_medias.insert(0, 'Corrida', range(1, len(cond_medias)+1))
     
     # 3. Ordenar y sacar el Top 5
-    cond_medias = cond_medias.sort_values(by='Y', ascending=False).head(5).reset_index(drop=True)
+    # Ordenar según el objetivo (max = descendente, min = ascendente)
+    es_min = st.session_state.get('objetivo', 'max') == 'min'
+    cond_medias = cond_medias.sort_values(by='Y', ascending=es_min).head(5).reset_index(drop=True)
     
     # 4. Construir la tabla
     ranking_data = []
@@ -607,36 +596,13 @@ elif st.session_state.stage == 'diagnostics':
     - Líneas que **se separan**: Interacción sinérgica (los efectos se potencian).
     """)
 
-
-    # --- NUEVO: Selector de orden de interacciones ---
-    todas_interacciones = [n for n in R['effects'] if len(n.split('*'))==2]
-    
-    # Solo mostramos el selector si hay interacciones disponibles
-    if todas_interacciones:
-        orden_interacciones = st.multiselect(
-            "🛠️ Selecciona y ordena las interacciones a graficar (el orden de selección será el orden de los gráficos):",
-            options=todas_interacciones,
-            default=todas_interacciones, # Por defecto las selecciona todas en el orden original
-            key="selector_interacciones"
-        )
-        st.session_state.orden_interacciones = orden_interacciones 
-    else:
-        orden_interacciones = []
-    # -------------------------------------------------
-
-    # Llamamos a la función pasando el orden elegido
-    fns_int = ce._gen_interactions(R, custom_order=orden_interacciones)
-    
+    fns_int = ce._gen_interactions(R)
     if fns_int:
-        if isinstance(fns_int, str):
-            st.image(fns_int, use_container_width=True)
-        else:
-            for fn in fns_int: 
-                if os.path.exists(fn):
-                    st.image(fn, use_container_width=True)
+        for fn in fns_int:
+            if os.path.exists(fn):
+                st.image(fn, use_container_width=True)
     else:
         st.info("Ninguna interaccion significativa en el modelo.")
-
 
     with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
         st.markdown("""
@@ -678,14 +644,6 @@ elif st.session_state.stage == 'report':
     else: 
         st.info("Ningun termino significativo. La ecuacion es solo la media (Beta 0).")
 
-    st.markdown("### 2. Balance Neto de la Configuración Óptima")
-    # Solo mostrar si es un diseño sin bloques ni curvatura (como el Problema 1)
-    if not R.get('tiene_bloques') and not R.get('tiene_centro'):
-        balance_df = ce.generar_tabla_balance_neto(R)
-        st.dataframe(balance_df, use_container_width=True)
-    else:
-        st.info("El balance neto no se muestra para diseños con bloques o puntos centrales (use la ecuación de regresión).")
-
     st.markdown("""
     #### Cómo interpretar esta ecuación (¡Muy importante para el informe!)
     Esta fórmula te permite **predecir** el valor de Y para cualquier combinación de niveles (-1 o +1).
@@ -704,8 +662,15 @@ elif st.session_state.stage == 'report':
         - Si tuvieras que recomendar una configuración para maximizar (o minimizar) Y, ¿qué valores (-1 o +1) le darías a los factores con coeficientes positivos y negativos?
         - ¿Cómo usarías esta ecuación en la práctica industrial o biológica?
         """)
+    st.markdown("### 2. Balance Neto de la Configuración Óptima")
+    # Solo mostrar si es un diseño sin bloques ni curvatura (como el Problema 1 o 3)
+    if not R.get('tiene_bloques') and not R.get('tiene_centro'):
+        balance_df = ce.generar_tabla_balance_neto(R, st.session_state.get('objetivo', 'max'))
+        st.dataframe(balance_df, use_container_width=True)
+    else:
+        st.info("El balance neto no se muestra para diseños con bloques o puntos centrales (use la ecuación de regresión).")
 
-    st.markdown("### 3. Generar Archivos")
+    st.markdown("### 2. Generar Archivos")
     if st.button("Generar descargas (Excel, Word, PNGs)", type='primary'):
         with st.spinner("Generando reporte completo..."):
             # 1. Generar Tablas
@@ -727,19 +692,13 @@ elif st.session_state.stage == 'report':
                     t.to_excel(w, sheet_name=hoja[:31], index=False)
 
             # 3. GENERAR GRÁFICOS PRIMERO (para poder insertarlos en el Word)
-            # Usamos Rf (modelo completo) para el Pareto y Daniel, y R (reducido) para los demás
-            Rf = st.session_state.R_full
             figs = {
-                'Pareto': ce._gen_pareto(Rf if Rf else R),
-                'SemiNormal': ce._gen_seminormal(Rf if Rf else R),
+                'Pareto': ce._gen_pareto(R),
+                'SemiNormal': ce._gen_seminormal(R),
                 'Residuales': ce._gen_residuales(df, R),
                 'EfectosPrincipales': ce._gen_main_effects(R, st.session_state.spec),
             }
-
-
-            # AQUÍ AGREGAMOS EL ORDEN AL REPORTE DE WORD
-            fns_int = ce._gen_interactions(R, custom_order=st.session_state.get('orden_interacciones', []))  
-
+            fns_int = ce._gen_interactions(R)
             if fns_int: figs['Interacciones'] = fns_int
             if st.session_state.via == ce.VIA_2:
                 fn_cub = ce._gen_cubo(R)
@@ -749,113 +708,116 @@ elif st.session_state.stage == 'report':
             if st.session_state.spec:
                 figs['Spec'] = ce._gen_spec(df, R, st.session_state.spec)
 
-            # 4. GENERAR WORD (Insertando todo en orden y con formato)
+            # 4. GENERAR WORD (Insertando todo en orden)
             doc = Document()
-            
-            # --- CONFIGURAR FORMATO DE LETRA BASE (Calibri 11) ---
-            style = doc.styles['Normal']
-            font = style.font
-            font.name = 'Calibri'
-            font.size = Pt(11)
-            # -----------------------------------------------------
-
-            # Título Principal del Documento (Título 1)
-            doc.add_heading(f"Informe de Análisis 2^k - {nombre}", level=1) 
-            
+            doc.add_heading(f"Informe de Análisis 2^k - {nombre}", 0)
             doc.add_paragraph(f"Estudiante: {st.session_state.estudiante}")
             doc.add_paragraph(f"Curso: {st.session_state.curso}")
             doc.add_paragraph(f"Fecha: {date.today().strftime('%Y-%m-%d')}")
             
-            # 1. DISEÑO (Título 2)
-            doc.add_heading("1. Descripción del Diseño Experimental", level=2)
-            doc.add_paragraph(f"Factores evaluados: {', '.join(st.session_state.factores)}")
-            doc.add_paragraph(f"Total de observaciones (N): {len(df)}")
-            doc.add_paragraph("Descripción: [Escribe aquí el contexto y los objetivos del experimento]")
+            doc.add_heading("1. Diseño experimental", level=1)
+            doc.add_paragraph(f"Factores: {', '.join(st.session_state.factores)}")
+            doc.add_paragraph(f"N = {len(df)}")
+            doc.add_paragraph("Descripción del diseño: [Escribe aquí el contexto y los objetivos del experimento]")
             
-            # 2. ANÁLISIS ESTADÍSTICO (Título 2)
-            doc.add_heading("2. Análisis Estadístico", level=2)
-            
-            # 2.1 Ecuación (Título 3)
-            doc.add_heading("2.1. Regresión Múltiple", level=3)
-            doc.add_paragraph("La ecuación de regresión ajustada que predice la respuesta es:")
-            if eq: 
-                doc.add_paragraph(eq, style='Intense Quote')
-            else:
-                doc.add_paragraph("Ningún término significativo.")
+            doc.add_heading("2. Análisis y resultados", level=1)
 
-            # 2.2 Balance Neto (Solo para diseños sin bloques ni centros)
+            # Balance Neto para el Word
             if not R.get('tiene_bloques') and not R.get('tiene_centro'):
-                doc.add_heading("2.2. Balance Neto de la Configuración Óptima", level=3)
+                doc.add_heading("2.1. Balance Neto de la Configuración Óptima", level=2)
                 doc.add_paragraph("La tabla muestra el desglose de ganancias y penalizaciones al configurar los factores en su nivel óptimo.")
-                balance_df = ce.generar_tabla_balance_neto(R)
+                balance_df = ce.generar_tabla_balance_neto(R, st.session_state.get('objetivo', 'max'))
                 _insertar_tabla_word(doc, balance_df)
                 
-                doc.add_paragraph(
-                    f"Como se observa en la tabla, la configuración óptima arroja un resultado final de {balance_df.iloc[-1]['Efecto (Puntos)']} puntos "
-                    f"(un {balance_df.iloc[-1]['Impacto porcentual (%)']}% respecto al promedio base). "
-                    "Esta combinación maximiza la respuesta del proceso."
-                )
-                num_anova = "2.3" # Si hay balance, el ANOVA es el 2.3
+                # Ajustamos la numeración del ANOVA para que sea el 2.2
+                doc.add_heading("2.2. ANOVA", level=2)
             else:
-                num_anova = "2.2" # Si no hay balance, el ANOVA es el 2.2
-
-            # 2.2 o 2.3 ANOVA (Título 3)
-            doc.add_heading(f"{num_anova}. Análisis de Varianza (ANOVA)", level=3)
-            doc.add_paragraph("Resultados del ANOVA calculado con Error Puro:")
-            _insertar_tabla_word(doc, R['anova'].round(4))
-            doc.add_paragraph(f"R2 = {R['R2']:.4f}" + (f" | R2 ajustado = {R['R2_adj']:.4f}" if R.get('R2_adj') else ""))
-
-            # 2.4. Interpretación (Título 3)
-            # Interpretación (Título 3 dinámico)
-            num_interp = "2.4" if num_anova == "2.3" else "2.3"
-            doc.add_heading(f"{num_interp}. Interpretación de los Resultados", level=3)
-            doc.add_paragraph("[Escribe aquí el análisis de los factores significativos y sus coeficientes]")
-
-            # 3. ANÁLISIS COMPLEMENTARIOS (Título 2)
-            doc.add_heading("3. Análisis Complementarios", level=2)
+                doc.add_heading("2.1. ANOVA", level=2)
             
-            # 3.1 Pareto (Título 3)
-            doc.add_heading("3.1. Diagrama de Pareto", level=3)
-            texto_pareto = ce.generar_texto_pareto(R)
-            doc.add_paragraph(texto_pareto)
+            doc.add_heading("2.1. ANOVA", level=2)
+            _insertar_tabla_word(doc, R['anova'])
+            doc.add_paragraph(f"R2 = {R['R2']:.4f}" + (f" | R2 ajustado = {R['R2_adj']:.4f}" if R.get('R2_adj') else ""))
+            doc.add_paragraph("Interpretación del ANOVA: [Explica qué términos son significativos]")
+            
+            doc.add_heading("2.2. Diagrama de Pareto", level=2)
             if 'Pareto' in figs and os.path.exists(figs['Pareto']):
                 doc.add_picture(figs['Pareto'], width=Inches(6))
-            doc.add_paragraph("Interpretación: [Menciona qué barras cruzaron el umbral]")
-
-            # 3.2 Semi-normal (Título 3)
-            doc.add_heading("3.2. Gráfico Semi-normal (Daniel)", level=3)
-            doc.add_paragraph("El gráfico semi-normal permite identificar visualmente el factor más dominante del experimento.")
+            doc.add_paragraph("Interpretación: [Explica qué barras cruzan el umbral y por qué]")
+            
+            doc.add_heading("2.3. Gráfico semi-normal (Lenth)", level=2)
             if 'SemiNormal' in figs and os.path.exists(figs['SemiNormal']):
                 doc.add_picture(figs['SemiNormal'], width=Inches(6))
-            doc.add_paragraph("Interpretación: [Menciona qué efectos se despegaron de la línea diagonal]")
-
-            # 3.3 Efectos Principales (Título 3)
-            doc.add_heading("3.3. Gráfico de Efectos Principales", level=3)
-            doc.add_paragraph("Muestra la dirección del efecto de cada factor (de -1 a +1).")
+            doc.add_paragraph("Interpretación: [Explica qué puntos se despegan de la línea de referencia]")
+            
+            doc.add_heading("2.4. Efectos principales", level=2)
+            # Generar tabla de efectos principales para el Word
+            ef_princ_data = []
+            for f in st.session_state.factores:
+                ef_princ_data.append({
+                    'Factor': f,
+                    'Media Nivel Bajo (-1)': round(R['main_effects'][f]['low'], 4),
+                    'Media Nivel Alto (+1)': round(R['main_effects'][f]['high'], 4),
+                    'Efecto (+1 vs -1)': round(R['main_effects'][f]['eff'], 4)
+                })
+            _insertar_tabla_word(doc, pd.DataFrame(ef_princ_data))
             if 'EfectosPrincipales' in figs and os.path.exists(figs['EfectosPrincipales']):
                 doc.add_picture(figs['EfectosPrincipales'], width=Inches(6))
-            doc.add_paragraph("Interpretación: [Menciona qué factores tienen pendiente positiva/negativa]")
+            doc.add_paragraph("Interpretación de los efectos: [Escribe aquí qué significa cada efecto en el proceso]")
 
-            # 3.4 Interacciones (Título 3)
+            # --- NUEVO: Ranking Top 5 ---
+            doc.add_heading("2.5. Condiciones Recomendadas (Ranking)", level=2)
+            
+            # Calcular el ranking para el Word
+            cond_medias_word = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
+            cond_medias_word.insert(0, 'Corrida', range(1, len(cond_medias_word)+1))
+            cond_medias_word = cond_medias_word.sort_values(by='Y', ascending=es_min).head(5).reset_index(drop=True)
+            
+            # Preparar la tabla para Word
+            tabla_word = cond_medias_word.copy()
+            tabla_word.insert(0, 'Posición', range(1, len(tabla_word)+1))
+            
+            # Reemplazar -1 y 1 por texto más amigable
+            for f in st.session_state.factores:
+                tabla_word[f] = tabla_word[f].apply(lambda x: "Bajo (-1)" if x==-1 else ("Alto (+1)" if x==1 else "Centro (0)"))
+                
+            tabla_word = tabla_word.rename(columns={'Y': 'Media de Y'})
+            
+            _insertar_tabla_word(doc, tabla_word)
+            doc.add_paragraph("Recomendación operativa: [Escribe aquí la combinación que sugieres y por qué]")
+            # -----------------------------
+
             if 'Interacciones' in figs and figs['Interacciones']:
-                doc.add_heading("3.4. Gráficos de Interacciones", level=3)
-                doc.add_paragraph("Los gráficos muestran si el efecto de un factor depende del nivel de otro.")
+                doc.add_heading("2.6. Interacciones", level=2)
                 for fn_int in figs['Interacciones']:
                     if os.path.exists(fn_int):
-                        doc.add_picture(fn_int, width=Inches(6))
-                doc.add_paragraph("Interpretación: [Explica si las líneas son paralelas o se cruzan]")
+                        doc.add_picture(fn_int, width=Inches(6)) # Ancho ideal para Word
+                doc.add_paragraph("Interpretación: [Explica si las líneas son paralelas o se cruzan, y qué implican]")
 
-            # 3.5 Residuales (Título 3)
-            doc.add_heading("3.5. Diagnóstico de Residuales", level=3)
-            doc.add_paragraph("Validación de los supuestos del modelo (Normalidad, Homocedasticidad, Independencia).")
+
+            if st.session_state.via == ce.VIA_2:
+                doc.add_heading("2.7. Curvatura y Diseño", level=2)
+                if 'Cubo' in figs and os.path.exists(figs['Cubo']):
+                    doc.add_picture(figs['Cubo'], width=Inches(4.5))
+                if 'Curvatura' in figs and os.path.exists(figs['Curvatura']):
+                    doc.add_picture(figs['Curvatura'], width=Inches(4.5))
+                doc.add_paragraph("Interpretación: [Explica si hay comportamiento no lineal]")
+
+            doc.add_heading("2.8. Diagnóstico de residuales", level=2)
             if 'Residuales' in figs and os.path.exists(figs['Residuales']):
                 doc.add_picture(figs['Residuales'], width=Inches(6.5))
-            doc.add_paragraph("Interpretación: [Indica si se cumplen los 3 supuestos]")
+            doc.add_paragraph("Interpretación: [Analiza los 3 supuestos: normalidad, homocedasticidad e independencia]")
             
-            # 4. CONCLUSIONES (Título 2)
-            doc.add_heading("4. Conclusiones", level=2)
-            doc.add_paragraph("1. [Escribe aquí la conclusión principal sobre qué factores son significativos y cuál es la configuración óptima]")
-            doc.add_paragraph("2. [Escribe aquí una conclusión sobre el impacto práctico o biológico de estos resultados]")
+            doc.add_heading("2.9. Ecuación de regresión", level=2)
+            doc.add_paragraph(f"Beta 0 = {R['y_bar']:.4f}")
+            if eq: doc.add_paragraph(eq, style='Intense Quote')
+            doc.add_paragraph("Interpretación de los coeficientes: [Explica qué significa cada término en la ecuación]")
+       
+            doc.add_heading("3. Conclusiones", level=1)
+            doc.add_paragraph("1. [Conclusión 1]")
+            doc.add_paragraph("2. [Conclusión 2]")
+            
+            doc.add_heading("4. Recomendaciones operativas", level=1)
+            doc.add_paragraph("[Qué niveles fijar o evitar para optimizar el proceso]")
             
             buf_word = io.BytesIO()
             doc.save(buf_word)
