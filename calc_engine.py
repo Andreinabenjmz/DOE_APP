@@ -315,11 +315,16 @@ def _gen_main_effects(R, spec):
     plt.tight_layout()
     fn = 'efectos_principales.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
 
-def _gen_interactions(R):
+
+def _gen_interactions(R, custom_order=None):
     es_fb = False
     sig = [n for n in R['effects'] if len(n.split('*'))==2]
+    
+    # NUEVO: Si el usuario definió un orden personalizado, lo usamos
+    if custom_order is not None and len(custom_order) > 0:
+        sig = [n for n in custom_order if n in R['effects']]
+        
     if not sig: return []
-
     files = []
     chunk_size = 3 # Máximo 3 gráficos por fila
 
@@ -333,13 +338,17 @@ def _gen_interactions(R):
             axes = [axes]
             
         for ax, name in zip(axes, chunk):
-            f1, f2 = name.split('*'); it = R['interactions'][(f1,f2)]
-            ax.plot([-1,1], [it['mll'], it['mhl']], 'o-', label=f'{f2}=-1')
-            ax.plot([-1,1], [it['mlh'], it['mhh']], 's--', label=f'{f2}=+1')
-            ax.set_xticks([-1,1]); ax.set_xticklabels([f'{f1}=-1', f'{f1}=+1'])
-            ax.set_xlabel(f1); ax.set_ylabel('Media de Y')
-            suf = ' (exploratoria)' if R['via'] == VIA_3 else (' (NO significativa)' if es_fb else '')
-            ax.set_title(f'Interaccion {name}{suf}'); ax.legend(); ax.grid(alpha=0.3)
+            # CORRECCIÓN PARA INTERACCIONES DE 2, 3 O 4 VÍAS
+            parts = name.split('*')
+            if len(parts) == 2:
+                f1, f2 = parts
+                it = R['interactions'][(f1,f2)]
+                ax.plot([-1,1], [it['mll'], it['mhl']], 'o-', label=f'{f2}=-1')
+                ax.plot([-1,1], [it['mlh'], it['mhh']], 's--', label=f'{f2}=+1')
+                ax.set_xticks([-1,1]); ax.set_xticklabels([f'{f1}=-1', f'{f1}=+1'])
+                ax.set_xlabel(f1); ax.set_ylabel('Media de Y')
+                suf = ' (exploratoria)' if R['via'] == VIA_3 else (' (NO significativa)' if es_fb else '')
+                ax.set_title(f'Interaccion {name}{suf}'); ax.legend(); ax.grid(alpha=0.3)
             
         plt.tight_layout()
         # Guardar la imagen del bloque (ej. interacciones_1.png, interacciones_2.png)
