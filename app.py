@@ -611,7 +611,8 @@ elif st.session_state.stage == 'diagnostics':
         orden_interacciones = []
     # -------------------------------------------------
 
-    fns_int = ce._gen_interactions(R, custom_order=orden_interacciones)
+
+    fns_int = ce._gen_interactions(R, custom_order=st.session_state.get('orden_interacciones', []))
     
     if fns_int:
         for fn in fns_int:
