@@ -763,7 +763,6 @@ elif st.session_state.stage == 'report':
             else:
                 doc.add_heading("2.1. ANOVA", level=2)
             
-            doc.add_heading("2.1. ANOVA", level=2)
             _insertar_tabla_word(doc, R['anova'])
             doc.add_paragraph(f"R2 = {R['R2']:.4f}" + (f" | R2 ajustado = {R['R2_adj']:.4f}" if R.get('R2_adj') else ""))
             doc.add_paragraph("Interpretación del ANOVA: [Explica qué términos son significativos]")
