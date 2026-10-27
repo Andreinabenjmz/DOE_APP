@@ -283,7 +283,6 @@ elif st.session_state.stage == 'design':
     if st.button("Ir a Modelo completo", type='primary'):
         st.session_state.stage = 'full_model'; st.rerun()
 
-
 elif st.session_state.stage == 'full_model':
     st.title("Paso 2 - Modelo completo")
     df = st.session_state.df
@@ -292,20 +291,13 @@ elif st.session_state.stage == 'full_model':
 
     if st.session_state.R_full is None:
         with st.spinner("Calculando..."):
-            try:
-                if via == ce.VIA_1:
-                    R = ce.calcular_via1_con_terminos(df, factores, terms=None)
-                elif via == ce.VIA_2:
-                    R = ce.calcular_via2_con_terminos(df, factores, terms=None)
-                else:
-                    R = ce.calcular_via3(df, factores)
-
-                st.session_state.R_full = R
-
-            except ValueError as e:
-                st.error(f"No se pudo completar el análisis: {e}")
-                st.stop()
-
+            if via == ce.VIA_1:
+                R = ce.calcular_via1_con_terminos(df, factores, terms=None)
+            elif via == ce.VIA_2:
+                R = ce.calcular_via2_con_terminos(df, factores, terms=None)
+            else:
+                R = ce.calcular_via3(df, factores)
+            st.session_state.R_full = R
     R = st.session_state.R_full
 
     st.markdown("### 1. Tabla ANOVA")
@@ -319,7 +311,7 @@ elif st.session_state.stage == 'full_model':
     - **F (Estadístico F):** Es la división de MS del término entre MS del Error. Si F es grande, el efecto es real y no puro ruido.
     - **p (Valor p):** La probabilidad de que ese efecto sea solo ruido. **Si p < 0.05, el término es estadísticamente significativo** (lo marcamos con ✅).
     """)
-
+    
     st.dataframe(R['anova'].round(4), use_container_width=True)
     
     st.write(f"**R2 = {R['R2']:.4f}**" + (f" | **R2 ajustado = {R['R2_adj']:.4f}**" if R.get('R2_adj') else ""))
@@ -379,7 +371,6 @@ elif st.session_state.stage == 'full_model':
     if c1.button("Volver a Diseno"): st.session_state.stage = 'design'; st.rerun()
     if c2.button("Refinar modelo", type='primary'):
         st.session_state.stage = 'refine'; st.rerun()
-
 
 elif st.session_state.stage == 'refine':
     st.title("Paso 3 - Refinar modelo")
@@ -464,19 +455,13 @@ elif st.session_state.stage == 'refine':
         """)
         
         st.dataframe(R_red['anova'].round(4), use_container_width=True)
-
-        st.write(f"**R² = {R_red['R2']:.4f}**")
         
-        r2_adj = R_red.get('R2_adj')
+        st.write(f"**R2 = {R_red['R2']:.4f}**" + (f" | **R2 ajustado = {R_red['R2_adj']:.4f}**" if R_red.get('R2_adj') else ""))
         
-        if r2_adj is not None:
-            st.write(f"**R² ajustado = {r2_adj:.4f}**")
-        else:
-            st.warning("El R² ajustado no está disponible en los resultados del modelo.")
-            
         # --- INICIO EXTRA OPCIONAL: Intervalos de Confianza ---
         with st.expander("🔬 Coeficientes e intervalos de confianza (Opcional)"):
             if R_red['via'] in (ce.VIA_1, ce.VIA_2):
+                # Reutilizamos la función de statsmodels que ya calcula todo bien
                 coef_df, fit_df = ce.generar_tabla_regresion(df, R_red)
                 st.dataframe(coef_df.round(4), use_container_width=True)
             else:
@@ -498,7 +483,6 @@ elif st.session_state.stage == 'refine':
     if c1.button("Volver a Modelo completo"): st.session_state.stage = 'full_model'; st.rerun()
     if c2.button("Diagnostico", type='primary'):
         st.session_state.stage = 'diagnostics'; st.rerun()
-
 
 elif st.session_state.stage == 'diagnostics':
     st.title("Paso 4 - Diagnostico")
