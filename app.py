@@ -507,7 +507,11 @@ elif st.session_state.stage == 'diagnostics':
 
     with st.expander("🔍 Auditoría Técnica: Fórmula Estadística del Modelo"):
         st.markdown("Esta es la fórmula exacta que la librería `Statsmodels` utiliza internamente para calcular los coeficientes y los residuales. Confirma que el modelo reducido incluye las interacciones seleccionadas.")
+    # Verificamos si la función existe antes de llamarla
+    if hasattr(ce, 'obtener_formula_modelo'):
         formula_audit = ce.obtener_formula_modelo(R)
+    else:
+        formula_audit = "Fórmula no disponible en esta versión"
         st.code(formula_audit, language="r")
         st.caption("Nota: Los dos puntos (:) indican interacciones (ej. A:B). 'Q(\"...\")' es la sintaxis de Statsmodels para nombres con caracteres especiales.")
 
