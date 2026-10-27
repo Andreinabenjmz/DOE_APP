@@ -463,8 +463,16 @@ elif st.session_state.stage == 'refine':
         """)
         
         st.dataframe(R_red['anova'].round(4), use_container_width=True)
-        
-        st.write(f"**R2 = {R_red['R2']:.4f}**" + (f" | **R2 ajustado = {R_red['R2_adj']:.4f}**" if R_red.get('R2_adj') else ""))
+
+    st.write(f"**R² = {R['R2']:.4f}**")
+    
+    r2_adj = R.get('R2_adj')
+    
+    if r2_adj is not None:
+        st.write(f"**R² ajustado = {r2_adj:.4f}**")
+    else:
+        st.warning("El R² ajustado no está disponible en los resultados del modelo.")
+
         
         # --- INICIO EXTRA OPCIONAL: Intervalos de Confianza ---
         with st.expander("🔬 Coeficientes e intervalos de confianza (Opcional)"):
