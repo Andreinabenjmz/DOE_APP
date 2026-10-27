@@ -358,27 +358,61 @@ def _gen_interactions(R, custom_order=None):
 
     return files
 
+def obtener_formula_modelo(R):
+    """Retorna la fórmula exacta que usa statsmodels para el modelo actual."""
+    terms = R.get('terms_included', list(R['effects'].keys()))
+    parts = []
+    for t in terms:
+        if '*' in t:
+            parts.append(':'.join(f'Q("{f}")' for f in t.split('*')))
+        else:
+            parts.append(f'Q("{t}")')
+            
+    formula = 'Q("Y") ~ ' + ' + '.join(parts) if parts else 'Q("Y") ~ 1'
+    
+    if R.get('tiene_bloques'): 
+        formula = 'Q("Y") ~ Q("Grupo") + ' + formula.split('~')[1].strip()
+    if R.get('tiene_centro'): 
+        formula += ' + Q("Curvatura")'
+        
+    return formula
 
 def _gen_residuales(df, R):
-    terms = R.get('terms_included', list(R['effects'].keys()))
-    parts = [f'Q("{f}")' for f in R['factores'] if f in terms]
-    formula = 'Q("Y") ~ ' + ' + '.join(parts) if parts else 'Q("Y") ~ 1'
-    if R['tiene_bloques']: formula = 'Q("Y") ~ Q("Grupo") + ' + formula.split('~')[1].strip()
-    if R['tiene_centro']: formula += ' + Q("Curvatura")'
+    # 1. Llamamos a la nueva función para que nos dé la fórmula lista
+    formula = obtener_formula_modelo(R)
+    
+    # 2. Ajustamos el modelo con statsmodels usando esa fórmula
     mfit = smf.ols(formula, data=df).fit()
-    df2 = df.copy(); df2['fit'] = mfit.fittedvalues; df2['res'] = mfit.resid
-    df2 = df2.reset_index(drop=True); df2['orden'] = range(1, len(df2)+1)
+    
+    # 3. Preparamos los datos para graficar
+    df2 = df.copy()
+    df2['fit'] = mfit.fittedvalues
+    df2['res'] = mfit.resid
+    df2 = df2.reset_index(drop=True)
+    df2['orden'] = range(1, len(df2)+1)
+    
+    # 4. Generamos los gráficos
     fig, axes = plt.subplots(1, 3, figsize=(18, 4))
     stats.probplot(df2['res'], dist='norm', plot=axes[0])
     axes[0].set_title('(a) Normalidad de residuales')
+    
     axes[1].scatter(df2['fit'], df2['res'], alpha=0.7, edgecolor='k')
-    axes[1].axhline(0, color='red', linestyle='--'); axes[1].grid(alpha=0.3)
+    axes[1].axhline(0, color='red', linestyle='--')
+    axes[1].grid(alpha=0.3)
     axes[1].set_title('(b) Residuales vs Ajustados')
+    
     axes[2].scatter(df2['orden'], df2['res'], alpha=0.7, edgecolor='k')
-    axes[2].axhline(0, color='red', linestyle='--'); axes[2].grid(alpha=0.3)
+    axes[2].axhline(0, color='red', linestyle='--')
+    axes[2].grid(alpha=0.3)
     axes[2].set_title('(c) Residuales vs Orden')
+    
     plt.tight_layout()
-    fn = 'residuales.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
+    fn = 'residuales.png'
+    plt.savefig(fn, bbox_inches='tight')
+    plt.close()
+    
+    return fn
+
 
 def _gen_cubo(R):
     k = R['k']
@@ -520,9 +554,7 @@ def generar_tabla_regresion(df, R):
     coef_df['Inferior 95%'] = conf_int[0].values
     coef_df['Superior 95%'] = conf_int[1].values
     
-    # VIF (Varianza inflada)
-    coef_df['VIF'] = 1.0 
-    
+
     # 4. Resumen de Ajuste Global
     fit_df = pd.DataFrame({
         'Métrica': ['Multiple R', 'R Square', 'Adjusted R Square', 'Standard Error', 'Observations', 'AIC', 'BIC (SBC)'],
