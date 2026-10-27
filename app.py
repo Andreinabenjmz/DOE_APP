@@ -289,16 +289,23 @@ elif st.session_state.stage == 'full_model':
     factores = st.session_state.factores
     via = st.session_state.via
 
+
     if st.session_state.R_full is None:
         with st.spinner("Calculando..."):
-            if via == ce.VIA_1:
-                R = ce.calcular_via1_con_terminos(df, factores, terms=None)
-            elif via == ce.VIA_2:
-                R = ce.calcular_via2_con_terminos(df, factores, terms=None)
-            else:
-                R = ce.calcular_via3(df, factores)
-            st.session_state.R_full = R
-    R = st.session_state.R_full
+            try:
+                if via == ce.VIA_1:
+                    R = ce.calcular_via1_con_terminos(df, factores, terms=None)
+                elif via == ce.VIA_2:
+                    R = ce.calcular_via2_con_terminos(df, factores, terms=None)
+                else:
+                    R = ce.calcular_via3(df, factores)
+
+                st.session_state.R_full = R
+
+            except ValueError as e:
+                st.error(f"No se pudo completar el análisis: {e}")
+                st.stop()
+
 
     st.markdown("### 1. Tabla ANOVA")
     st.markdown("""
