@@ -306,6 +306,7 @@ elif st.session_state.stage == 'full_model':
                 st.error(f"No se pudo completar el análisis: {e}")
                 st.stop()
 
+    R = st.session_state.R_full
 
     st.markdown("### 1. Tabla ANOVA")
     st.markdown("""
