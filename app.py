@@ -511,7 +511,6 @@ elif st.session_state.stage == 'refine':
         # --- INICIO EXTRA OPCIONAL: Intervalos de Confianza ---
         with st.expander("🔬 Coeficientes e intervalos de confianza (Opcional)"):
             if R_red['via'] in (ce.VIA_1, ce.VIA_2):
-                # Reutilizamos la función de statsmodels que ya calcula todo bien
                 coef_df, fit_df = ce.generar_tabla_regresion(df, R_red)
                 st.dataframe(coef_df.round(4), use_container_width=True)
             else:
@@ -528,6 +527,7 @@ elif st.session_state.stage == 'refine':
             - ¿El R2 ajustado subio respecto al modelo completo?
             - Si un termino perdio significancia, ¿quitaste una interaccion importante?
             """)
+
 
     c1, c2 = st.columns(2)
     if c1.button("Volver a Modelo completo"): st.session_state.stage = 'full_model'; st.rerun()
