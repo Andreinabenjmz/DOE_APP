@@ -637,12 +637,10 @@ def _gen_profiler(R, objetivo='min', spec=None):
     # 1. Función interna para predecir Y usando los coeficientes del modelo
     def predecir_y(niveles):
         y_pred = R['y_bar']
-        # Usamos solo los términos que sobrevivieron al pooling (terms_included)
         terms = R.get('terms_included', list(R['effects'].keys()))
         for term in terms:
             if term not in R['effects']: continue
             coef = R['effects'][term]['coef']
-            # Multiplicar los niveles de los factores en el término
             val = 1
             for f in term.split('*'):
                 val *= niveles[f]
@@ -667,25 +665,20 @@ def _gen_profiler(R, objetivo='min', spec=None):
     if n == 1: axes = [axes]
     
     for i, (ax, f) in enumerate(zip(axes, factores)):
-        # Calcular Y si el factor f está en -1 (manteniendo los otros en su óptimo)
         niveles_bajo = niveles_optimos.copy()
         niveles_bajo[f] = -1
         y_bajo = predecir_y(niveles_bajo)
         
-        # Calcular Y si el factor f está en +1 (manteniendo los otros en su óptimo)
         niveles_alto = niveles_optimos.copy()
         niveles_alto[f] = 1
         y_alto = predecir_y(niveles_alto)
         
-        # Graficar la línea
         ax.plot([-1, 1], [y_bajo, y_alto], 'o-', color='gray', markersize=8, zorder=2)
         
-        # Marcar el nivel óptimo con un punto rojo
         opt_level = niveles_optimos[f]
         opt_y = y_bajo if opt_level == -1 else y_alto
         ax.plot(opt_level, opt_y, 'o', color='red', markersize=14, markeredgecolor='black', zorder=5)
         
-        # Formato
         ax.set_xticks([-1, 1])
         ax.set_xticklabels(['-1', '+1'])
         ax.set_xlabel(f)
