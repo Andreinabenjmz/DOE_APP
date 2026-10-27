@@ -415,6 +415,7 @@ elif st.session_state.stage == 'full_model':
     if c2.button("Refinar modelo", type='primary'):
         st.session_state.stage = 'refine'; st.rerun()
 
+
 elif st.session_state.stage == 'refine':
     st.title("Paso 3 - Refinar modelo")
     
@@ -528,11 +529,11 @@ elif st.session_state.stage == 'refine':
             - Si un termino perdio significancia, ¿quitaste una interaccion importante?
             """)
 
-
     c1, c2 = st.columns(2)
     if c1.button("Volver a Modelo completo"): st.session_state.stage = 'full_model'; st.rerun()
     if c2.button("Diagnostico", type='primary'):
         st.session_state.stage = 'diagnostics'; st.rerun()
+
 
 elif st.session_state.stage == 'diagnostics':
     st.title("Paso 4 - Diagnostico")
