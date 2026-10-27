@@ -319,6 +319,41 @@ elif st.session_state.stage == 'full_model':
     - **F (Estadístico F):** Es la división de MS del término entre MS del Error. Si F es grande, el efecto es real y no puro ruido.
     - **p (Valor p):** La probabilidad de que ese efecto sea solo ruido. **Si p < 0.05, el término es estadísticamente significativo** (lo marcamos con ✅).
     """)
+
+
+
+        st.dataframe(R_red['anova'].round(4), use_container_width=True)
+
+        st.write(f"**R² = {R_red['R2']:.4f}**")
+        
+        r2_adj = R_red.get('R2_adj')
+        
+        if r2_adj is not None:
+            st.write(f"**R² ajustado = {r2_adj:.4f}**")
+        else:
+            st.warning("El R² ajustado no está disponible en los resultados del modelo.")
+            
+        # --- INICIO EXTRA OPCIONAL: Intervalos de Confianza ---
+        with st.expander("🔬 Coeficientes e intervalos de confianza (Opcional)"):
+            if R_red['via'] in (ce.VIA_1, ce.VIA_2):
+                # Reutilizamos la función de statsmodels que ya calcula todo bien
+                coef_df, fit_df = ce.generar_tabla_regresion(df, R_red)
+                st.dataframe(coef_df.round(4), use_container_width=True)
+            else:
+                st.info(
+                    "En la Vía 3 se utiliza el método de Lenth. "
+                    "No se presentan intervalos de confianza convencionales "
+                    "porque este diseño no cuenta con réplicas puras para "
+                    "estimar un error residual independiente."
+                )
+
+        with st.expander("🤔 Preguntas de reflexion para tu informe"):
+            st.markdown("""
+            - ¿Todos los terminos que dejaste siguen siendo significativos (p < 0.05)?
+            - ¿El R2 ajustado subio respecto al modelo completo?
+            - Si un termino perdio significancia, ¿quitaste una interaccion importante?
+            """)
+
     
     st.dataframe(R['anova'].round(4), use_container_width=True)
     
@@ -461,19 +496,18 @@ elif st.session_state.stage == 'refine':
         - Ahora los Grados de Libertad del error son más grandes, lo que hace que el análisis sea **más sensible** para detectar los efectos verdaderos.
         - El **R2 ajustado** suele subir, porque el modelo es más simple y preciso.
         """)
-        
+
         st.dataframe(R_red['anova'].round(4), use_container_width=True)
 
-    st.write(f"**R² = {R['R2']:.4f}**")
-    
-    r2_adj = R.get('R2_adj')
-    
-    if r2_adj is not None:
-        st.write(f"**R² ajustado = {r2_adj:.4f}**")
-    else:
-        st.warning("El R² ajustado no está disponible en los resultados del modelo.")
-
+        st.write(f"**R² = {R_red['R2']:.4f}**")
         
+        r2_adj = R_red.get('R2_adj')
+        
+        if r2_adj is not None:
+            st.write(f"**R² ajustado = {r2_adj:.4f}**")
+        else:
+            st.warning("El R² ajustado no está disponible en los resultados del modelo.")
+            
         # --- INICIO EXTRA OPCIONAL: Intervalos de Confianza ---
         with st.expander("🔬 Coeficientes e intervalos de confianza (Opcional)"):
             if R_red['via'] in (ce.VIA_1, ce.VIA_2):
