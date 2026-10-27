@@ -589,6 +589,7 @@ elif st.session_state.stage == 'diagnostics':
         - **En la tabla de Ranking:** ¿Qué factores se repiten en las primeras posiciones? ¿Qué combinación recomendarías?
         """)
 
+
     st.markdown("### 3. Interacciones")
     st.markdown("""
     Muestra si el efecto de un factor **depende** del nivel de otro factor.
@@ -597,13 +598,28 @@ elif st.session_state.stage == 'diagnostics':
     - Líneas que **se separan**: Interacción sinérgica (los efectos se potencian).
     """)
 
-    fns_int = ce._gen_interactions(R)
+    # --- RESTAURANDO EL SELECTOR ---
+    todas_interacciones = [n for n in R['effects'] if len(n.split('*'))==2]
+    if todas_interacciones:
+        orden_interacciones = st.multiselect(
+            "🛠️ Selecciona y ordena las interacciones a graficar:",
+            options=todas_interacciones,
+            default=todas_interacciones, 
+            key="selector_interacciones"
+        )
+        st.session_state.orden_interacciones = orden_interacciones 
+    else:
+        orden_interacciones = []
+
+    fns_int = ce._gen_interactions(R, custom_order=orden_interacciones)
+    
     if fns_int:
         for fn in fns_int:
             if os.path.exists(fn):
                 st.image(fn, use_container_width=True)
     else:
         st.info("Ninguna interaccion significativa en el modelo.")
+
 
     with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
         st.markdown("""
@@ -720,8 +736,14 @@ elif st.session_state.stage == 'report':
                 'EfectosPrincipales': ce._gen_main_effects(R, st.session_state.spec),
                 'Profiler': ce._gen_profiler(R, st.session_state.objetivo, st.session_state.spec)[0] 
             }
-            fns_int = ce._gen_interactions(R)
+            
+            orden_guardado = st.session_state.get('orden_interacciones', None)
+            if not orden_guardado:
+                orden_guardado = [n for n in R['effects'] if len(n.split('*'))==2]
+                
+            fns_int = ce._gen_interactions(R, custom_order=orden_guardado)
             if fns_int: figs['Interacciones'] = fns_int
+
             if st.session_state.via == ce.VIA_2:
                 fn_cub = ce._gen_cubo(R)
                 if fn_cub: figs['Cubo'] = fn_cub
