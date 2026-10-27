@@ -484,7 +484,7 @@ elif st.session_state.stage == 'refine':
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")
-   
+
     if st.session_state.R_reduced is not None:
         R_red = st.session_state.R_reduced
         st.markdown("### 2. ANOVA del modelo reducido (Final)")
