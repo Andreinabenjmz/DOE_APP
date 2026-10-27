@@ -484,7 +484,7 @@ elif st.session_state.stage == 'refine':
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")
-
+   
     if st.session_state.R_reduced is not None:
         R_red = st.session_state.R_reduced
         st.markdown("### 2. ANOVA del modelo reducido (Final)")
@@ -496,7 +496,7 @@ elif st.session_state.stage == 'refine':
         - Ahora los Grados de Libertad del error son más grandes, lo que hace que el análisis sea **más sensible** para detectar los efectos verdaderos.
         - El **R2 ajustado** suele subir, porque el modelo es más simple y preciso.
         """)
-
+        
         st.dataframe(R_red['anova'].round(4), use_container_width=True)
 
         st.write(f"**R² = {R_red['R2']:.4f}**")
