@@ -628,3 +628,78 @@ def generar_tabla_balance_neto(R, objetivo='max'):
                  'Tipo de Efecto': 'Balance Neto'})
                  
     return pd.DataFrame(rows)
+
+def _gen_profiler(R, objetivo='min', spec=None):
+    """Genera un Optimizador de Respuesta (Profiler) evaluando la ecuación completa (con interacciones)."""
+    factores = R['factores']
+    n = len(factores)
+    
+    # 1. Función interna para predecir Y usando los coeficientes del modelo
+    def predecir_y(niveles):
+        y_pred = R['y_bar']
+        # Usamos solo los términos que sobrevivieron al pooling (terms_included)
+        terms = R.get('terms_included', list(R['effects'].keys()))
+        for term in terms:
+            if term not in R['effects']: continue
+            coef = R['effects'][term]['coef']
+            # Multiplicar los niveles de los factores en el término
+            val = 1
+            for f in term.split('*'):
+                val *= niveles[f]
+            y_pred += coef * val
+        return y_pred
+
+    # 2. Encontrar la combinación óptima evaluando todas las esquinas (2^k)
+    import itertools
+    mejor_y = float('inf') if objetivo == 'min' else float('-inf')
+    niveles_optimos = {}
+    
+    for combo in itertools.product([-1, 1], repeat=n):
+        niveles_actuales = dict(zip(factores, combo))
+        y_actual = predecir_y(niveles_actuales)
+        
+        if (objetivo == 'min' and y_actual < mejor_y) or (objetivo == 'max' and y_actual > mejor_y):
+            mejor_y = y_actual
+            niveles_optimos = niveles_actuales
+
+    # 3. Graficar
+    fig, axes = plt.subplots(1, n, figsize=(4*n, 4), sharey=True)
+    if n == 1: axes = [axes]
+    
+    for i, (ax, f) in enumerate(zip(axes, factores)):
+        # Calcular Y si el factor f está en -1 (manteniendo los otros en su óptimo)
+        niveles_bajo = niveles_optimos.copy()
+        niveles_bajo[f] = -1
+        y_bajo = predecir_y(niveles_bajo)
+        
+        # Calcular Y si el factor f está en +1 (manteniendo los otros en su óptimo)
+        niveles_alto = niveles_optimos.copy()
+        niveles_alto[f] = 1
+        y_alto = predecir_y(niveles_alto)
+        
+        # Graficar la línea
+        ax.plot([-1, 1], [y_bajo, y_alto], 'o-', color='gray', markersize=8, zorder=2)
+        
+        # Marcar el nivel óptimo con un punto rojo
+        opt_level = niveles_optimos[f]
+        opt_y = y_bajo if opt_level == -1 else y_alto
+        ax.plot(opt_level, opt_y, 'o', color='red', markersize=14, markeredgecolor='black', zorder=5)
+        
+        # Formato
+        ax.set_xticks([-1, 1])
+        ax.set_xticklabels(['-1', '+1'])
+        ax.set_xlabel(f)
+        ax.set_title(f'Óptimo: {"Bajo" if opt_level==-1 else "Alto"}')
+        if i == 0:
+            ax.set_ylabel('Predicción de Y')
+        ax.grid(alpha=0.3)
+        
+        if spec:
+            ax.axhspan(spec['target']-spec['tol'], spec['target']+spec['tol'], alpha=0.1, color='green')
+            
+    plt.suptitle(f'Optimizador de Respuesta (Predicción óptima = {mejor_y:.2f})', fontsize=14)
+    plt.tight_layout()
+    fn = 'profiler.png'
+    plt.savefig(fn, bbox_inches='tight')
+    plt.close()
+    return fn, mejor_y

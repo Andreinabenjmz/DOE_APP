@@ -12,7 +12,7 @@ from docx import Document
 
 import calc_engine as ce
 
-from docx.shared import Inches
+from docx.shared import Inches, Pt
 
 def _insertar_tabla_word(doc, df_tabla):
     """Convierte un DataFrame de Pandas en una tabla bonita de Word."""
@@ -300,25 +300,6 @@ elif st.session_state.stage == 'full_model':
             st.session_state.R_full = R
     R = st.session_state.R_full
 
-    # --- RESTAURADO: Ecuación y Coeficientes antes del ANOVA ---
-    st.markdown("### 1. Ecuación y Coeficientes de Regresión")
-    eq = ce._ecuacion_str(R)
-    if eq:
-        st.markdown(f"**Ecuación Ajustada:**\n```\n{eq}\n```")
-    
-    try:
-        coef_df, fit_df = ce.generar_tabla_regresion(df, R)
-        st.markdown("**Tabla de Coeficientes (Efectos individuales):**")
-        st.dataframe(coef_df.round(4), use_container_width=True)
-        
-        st.markdown("**Resumen del Ajuste Global:**")
-        st.dataframe(fit_df.round(4), use_container_width=True)
-    except Exception as e:
-        st.warning(f"No se pudo generar la tabla de coeficientes: {e}")
-        
-    st.markdown("---")
-    # -------------------------------------------------------------
-
     st.markdown("### 1. Tabla ANOVA")
     st.markdown("""
     Esta tabla es el **corazón del análisis**. Compara la variación que produce cada factor (la "señal") contra el ruido del experimento.
@@ -599,6 +580,7 @@ elif st.session_state.stage == 'diagnostics':
     
     st.dataframe(pd.DataFrame(ranking_data), use_container_width=True)
 
+
     with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
         st.markdown("""
         - ¿Cuál es el gráfico con la pendiente más pronunciada? (Ese es el factor dominante).
@@ -615,31 +597,13 @@ elif st.session_state.stage == 'diagnostics':
     - Líneas que **se separan**: Interacción sinérgica (los efectos se potencian).
     """)
 
-    # --- NUEVO: Selector de orden de interacciones ---
-    todas_interacciones = [n for n in R['effects'] if len(n.split('*'))==2]
-    
-    if todas_interacciones:
-        orden_interacciones = st.multiselect(
-            "🛠️ Selecciona y ordena las interacciones a graficar (el orden de selección será el orden de los gráficos):",
-            options=todas_interacciones,
-            default=todas_interacciones, 
-            key="selector_interacciones"
-        )
-        st.session_state.orden_interacciones = orden_interacciones 
-    else:
-        orden_interacciones = []
-    # -------------------------------------------------
-
-
-    fns_int = ce._gen_interactions(R, custom_order=st.session_state.get('orden_interacciones', []))
-    
+    fns_int = ce._gen_interactions(R)
     if fns_int:
         for fn in fns_int:
             if os.path.exists(fn):
                 st.image(fn, use_container_width=True)
     else:
         st.info("Ninguna interaccion significativa en el modelo.")
-
 
     with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
         st.markdown("""
@@ -660,6 +624,26 @@ elif st.session_state.stage == 'diagnostics':
             - ¿Qué combinación de niveles comparten todas las barras rojas?
             - ¿El centro (0,0,0) cumple con la especificación?
             """)
+
+    # =====================================================================
+    # COMIENZA EL CÓDIGO DEL PROFILER (Debe ir aquí, justo antes de los botones)
+    # =====================================================================
+    st.markdown("### 5. Optimizador de Respuesta (Profiler)")
+    st.markdown("""
+    Este gráfico evalúa la **ecuación completa del modelo** (incluyendo interacciones) para encontrar la mejor combinación posible de los factores. El punto rojo indica el nivel que debe tomar cada factor para lograr el objetivo.
+    """)
+    
+    obj_actual = st.session_state.get('objetivo', 'max')
+    spec_actual = st.session_state.get('spec', None)
+    
+    fn_profiler, mejor_y = ce._gen_profiler(R, objetivo=obj_actual, spec=spec_actual)
+    st.image(fn_profiler, use_container_width=True)
+    
+    st.info(f"💡 **Predicción Óptima del Modelo:** Con esta configuración, el modelo estima que la respuesta será de **{mejor_y:.2f}**.")
+    # =====================================================================
+    # TERMINA EL CÓDIGO DEL PROFILER
+    # =====================================================================
+
 
     c1, c2 = st.columns(2)
     if c1.button("Volver a Refinar"): st.session_state.stage = 'refine'; st.rerun()
@@ -734,19 +718,9 @@ elif st.session_state.stage == 'report':
                 'SemiNormal': ce._gen_seminormal(R),
                 'Residuales': ce._gen_residuales(df, R),
                 'EfectosPrincipales': ce._gen_main_effects(R, st.session_state.spec),
+                'Profiler': ce._gen_profiler(R, st.session_state.objetivo, st.session_state.spec)[0] 
             }
-
-            # Usar el orden elegido en el paso anterior
-
-            # Obtener el orden de forma segura
-            orden_guardado = st.session_state.get('orden_interacciones', None)
-            
-            # Si el orden guardado no existe o está vacío, usar el orden por defecto
-            if not orden_guardado:
-                orden_guardado = [n for n in R['effects'] if len(n.split('*'))==2]
-                
-            fns_int = ce._gen_interactions(R, custom_order=orden_guardado)
-
+            fns_int = ce._gen_interactions(R)
             if fns_int: figs['Interacciones'] = fns_int
             if st.session_state.via == ce.VIA_2:
                 fn_cub = ce._gen_cubo(R)
@@ -785,14 +759,6 @@ elif st.session_state.stage == 'report':
             _insertar_tabla_word(doc, R['anova'])
             doc.add_paragraph(f"R2 = {R['R2']:.4f}" + (f" | R2 ajustado = {R['R2_adj']:.4f}" if R.get('R2_adj') else ""))
             doc.add_paragraph("Interpretación del ANOVA: [Explica qué términos son significativos]")
-
-            doc.add_heading("2.1.1. Tabla de Coeficientes", level=3)
-            try:
-                coef_df, fit_df = ce.generar_tabla_regresion(df, R)
-                _insertar_tabla_word(doc, coef_df.round(4))
-            except Exception as e:
-                doc.add_paragraph(f"No se pudo generar la tabla de coeficientes: {e}")
-
             
             doc.add_heading("2.2. Diagrama de Pareto", level=2)
             if 'Pareto' in figs and os.path.exists(figs['Pareto']):
@@ -825,6 +791,7 @@ elif st.session_state.stage == 'report':
             # Calcular el ranking para el Word
             cond_medias_word = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
             cond_medias_word.insert(0, 'Corrida', range(1, len(cond_medias_word)+1))
+            es_min = st.session_state.get('objetivo', 'max') == 'min'
             cond_medias_word = cond_medias_word.sort_values(by='Y', ascending=es_min).head(5).reset_index(drop=True)
             
             # Preparar la tabla para Word
@@ -866,7 +833,16 @@ elif st.session_state.stage == 'report':
             doc.add_paragraph(f"Beta 0 = {R['y_bar']:.4f}")
             if eq: doc.add_paragraph(eq, style='Intense Quote')
             doc.add_paragraph("Interpretación de los coeficientes: [Explica qué significa cada término en la ecuación]")
-       
+
+            # =======================================================
+            # AGREGA ESTO PARA INSERTAR EL PROFILER EN EL WORD
+            # =======================================================
+            doc.add_heading("2.10. Optimizador de Respuesta (Profiler)", level=2)
+            if 'Profiler' in figs and os.path.exists(figs['Profiler']):
+                doc.add_picture(figs['Profiler'], width=Inches(6.5))
+            doc.add_paragraph("Interpretación: [Explica la configuración óptima y el valor predicho]")
+            # =======================================================
+
             doc.add_heading("3. Conclusiones", level=1)
             doc.add_paragraph("1. [Conclusión 1]")
             doc.add_paragraph("2. [Conclusión 2]")
