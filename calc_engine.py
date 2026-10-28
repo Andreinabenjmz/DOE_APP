@@ -151,6 +151,20 @@ def calcular_via1_con_terminos(df, factores, terms=None):
 # ---------- Via 2 con soporte para terminos ----------
 def calcular_via2_con_terminos(df, factores, terms=None):
     k = len(factores); n_b = df['Grupo'].nunique(); N = len(df)
+
+    # --- VALIDACIÓN: cada bloque debe contener las 2^k esquinas exactas ---
+    esperadas = set(itertools.product([-1, 1], repeat=k))
+    for g, sub in df[df['Curvatura'] == 0].groupby('Grupo'):
+        obtenidas = set(map(tuple, sub[factores].to_numpy()))
+        if len(sub) != 2**k or obtenidas != esperadas:
+            raise ValueError(
+                f"El bloque '{g}' tiene {len(sub)} corridas de esquina "
+                f"({len(obtenidas)} esquinas únicas de {2**k} esperadas). "
+                f"El diseño 2^{k} requiere que cada bloque contenga todas las esquinas "
+                f"exactamente una vez (sin duplicados, sin faltantes)."
+            )
+    # ----------------------------------------------------------------------
+
     Nf = n_b*2**k; Nc = N - Nf; G = df['Y'].sum(); y = G/N
     esq = df[df['Curvatura']==0]; cen = df[df['Curvatura']==1]
     SS_t = (df['Y']**2).sum() - G**2/N
