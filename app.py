@@ -1,4 +1,4 @@
-# app.py
+# app_plus.py
 # Interfaz Streamlit con flujo tipo Minitab
 
 import streamlit as st
@@ -10,7 +10,7 @@ import zipfile
 from datetime import date
 from docx import Document
 
-import calc_engine as ce
+import calc_engine_plus as ce
 
 from docx.shared import Inches
 
@@ -641,6 +641,19 @@ elif st.session_state.stage == 'diagnostics':
             - ¿Qué combinación de niveles comparten todas las barras rojas?
             - ¿El centro (0,0,0) cumple con la especificación?
             """)
+    # --- NUEVO: Auditoría de Fórmulas ---
+    with st.expander("📐 Auditoría Técnica: Fórmulas Estadísticas Utilizadas"):
+        st.markdown("""
+        Esta aplicación se apoya en las librerías **Statsmodels** y **SciPy**. A continuación, se detallan las fórmulas matemáticas que el programa utiliza internamente para calcular los resultados presentados:
+        """)
+        
+        formulas = ce.obtener_formulas_utilizadas(R)
+        for nombre, formula in formulas.items():
+            st.markdown(f"**{nombre}:**")
+            st.code(formula, language="text")
+            
+        st.info("💡 **Nota sobre la nomenclatura:** En la fórmula del modelo de Statsmodels, el símbolo `~` significa 'en función de', los `+` suman términos, y los `:` indican interacciones entre variables. El término `Q(\"...\")` es la sintaxis de Statsmodels para manejar nombres de columnas.")
+    # ------------------------------------       
 
     c1, c2 = st.columns(2)
     if c1.button("Volver a Refinar"): st.session_state.stage = 'refine'; st.rerun()

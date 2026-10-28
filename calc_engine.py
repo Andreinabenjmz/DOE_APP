@@ -1,4 +1,4 @@
-# calc_engine.py
+# calc_engine_plus.py
 # Motor de cálculo y gráficos — sin dependencias de Streamlit ni Colab
 
 import pandas as pd
@@ -181,10 +181,19 @@ def calcular_via2_con_terminos(df, factores, terms=None):
                        for gl in anova['GL']]
     anova['Sig'] = ['OK' if (pd.notna(p) and p<0.05) else ('-' if pd.isna(p) else 'NO')
                     for p in anova['p']]
+    # --- NUEVO: Guardar coeficientes de bloques para la ecuación (Solo Vía 2) ---
+    medias_bloques = bt / sz
+    R_intercepto_bloques = medias_bloques.iloc[0] 
+    R_coef_bloques = {}
+    for i, b in enumerate(medias_bloques.index):
+        if i > 0:
+            R_coef_bloques[b] = medias_bloques.iloc[i] - R_intercepto_bloques
+    # ----------------------------------------------------------------------------
     R2 = 1 - SS_r/SS_t; R2a = 1 - (SS_r/df_r)/(SS_t/(N-1))
     R = dict(via=VIA_2, k=k, factores=factores, N=N, Nf=Nf, Nc=Nc,
              n_bloques=n_b, n_replicas=n_b, tiene_bloques=True, tiene_centro=True,
              y_bar=y, SS_total=SS_t, SS_blocks=SS_b, SS_curv=SS_c,
+             intercepto_bloques=R_intercepto_bloques, coef_bloques=R_coef_bloques,
              SS_resid=SS_r, SS_model=SS_m, effects=ef, all_effects=ef_all,
              terms_included=list(terms), anova=anova,
              MS_resid=MS_r, MS_blocks=MS_b, MS_curv=MS_c,
@@ -466,15 +475,36 @@ def _gen_spec(df, R, spec):
     fn = 'especificacion.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
 
 # ---------- Ecuacion ----------
-def _ecuacion_str(R):
+def _ecuacion_str(R, df=None):
+    # 1. Filtrar los términos significativos según la Vía
     if R['via'] == VIA_3:
         sig = [n for n,e in R['effects'].items() if e.get('activo')]
     else:
         sig = [n for n,e in R['effects'].items() if e.get('p',1)<0.05]
-    if not sig: return None
-    return f"Y = {R['y_bar']:.4f} " + " ".join(
-        f"{R['effects'][n]['coef']:+.4f}*{n.replace('*','*')}" for n in sig)
-
+        
+    terms = [f"{R['effects'][n]['coef']:+.4f}*{n.replace('*','*')}" for n in sig]
+    
+    # 2. Intercepto por defecto (Vía 1 y Vía 3)
+    intercepto = R['y_bar']
+    
+    # 3. Si es la Vía 2, agregamos Bloques y Curvatura
+    if R['via'] == VIA_2:
+        # Usar el intercepto del primer bloque si existe
+        intercepto = R.get('intercepto_bloques', R['y_bar'])
+        
+        # Agregar coeficientes de los otros bloques
+        if 'coef_bloques' in R:
+            for b, coef_b in R['coef_bloques'].items():
+                terms.append(f"{coef_b:+.4f}*{str(b).replace(' ', '_')}")
+                
+        # Agregar curvatura si es significativa
+        if R.get('p_curv', 1) < 0.05:
+            coef_curv = R['yc_bar'] - R['yf_bar']
+            terms.append(f"{coef_curv:+.4f}*Curvatura")
+            
+    if not terms: return None
+    return f"Y = {intercepto:.4f} " + " ".join(terms)
+    
 # ---------- Funciones de Reporte y Balance ----------
 
 def generar_tabla_regresion(df, R):
@@ -628,3 +658,37 @@ def generar_tabla_balance_neto(R, objetivo='max'):
                  'Tipo de Efecto': 'Balance Neto'})
                  
     return pd.DataFrame(rows)
+
+def obtener_formulas_utilizadas(R):
+    """Devuelve un diccionario con las fórmulas estadísticas utilizadas en el análisis."""
+    eq_str = _ecuacion_str(R) or "No disponible (ningún término significativo)"
+    
+    # Construir la fórmula de Statsmodels
+    terms = R.get('terms_included', list(R['effects'].keys()))
+    parts = []
+    for f in R['factores']:
+        if f in terms: parts.append(f'Q("{f}")')
+    for t in terms:
+        if '*' in t:
+            parts.append(':'.join(f'Q("{f}")' for f in t.split('*')))
+            
+    formula = 'Q("Y") ~ ' + ' + '.join(parts) if parts else 'Q("Y") ~ 1'
+    if R.get('tiene_bloques'): 
+        formula = 'Q("Y") ~ Q("Grupo") + ' + formula.split('~')[1].strip()
+    if R.get('tiene_centro'): 
+        formula += ' + Q("Curvatura")'
+
+    # Diccionario de fórmulas para mostrar
+    formulas = {
+        "Ecuación de Regresión Ajustada": eq_str,
+        "Fórmula del Modelo (Statsmodels)": formula,
+        "Error Estándar del Coeficiente (SE)": "SE = √(CM_residual / n)",
+        "Estadístico t (Significancia)": "t = Coeficiente / SE",
+        "Estadístico F (ANOVA)": "F = CM_efecto / CM_residual",
+        "Estimación de Lenth (PSE)": "PSE = 1.5 * mediana(|efectos| < 2.5 * s0)",
+        "Grados de Libertad (Lenth)": "df_t = m / 3"
+    }
+    return formulas
+
+
+
