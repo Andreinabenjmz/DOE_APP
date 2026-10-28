@@ -500,14 +500,43 @@ def _gen_spec(df, R, spec):
     fn = 'especificacion.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
 
 # ---------- Ecuacion ----------
-def _ecuacion_str(R):
+def _ecuacion_str(R, df=None):
+    # Si tenemos los datos (df), usamos Statsmodels para armar la ecuación exacta
+    if df is not None:
+        try:
+            coef_df, _ = generar_tabla_regresion(df, R)
+            # Filtramos los términos significativos (p < 0.05) y el Intercepto
+            sig = coef_df[(coef_df['Valor p'] < 0.05) | (coef_df['Término'].str.contains('Intercept'))]
+            
+            eq_terms = []
+            intercept_val = 0
+            for _, row in sig.iterrows():
+                term = row['Término']
+                coef = row['Coef']
+                if 'Intercept' in term:
+                    intercept_val = coef
+                else:
+                    # Limpiamos el nombre del término para que se vea bonito
+                    t_clean = term.replace(' * ', '*').replace(' ', '_')
+                    eq_terms.append(f"{coef:+.4f}*{t_clean}")
+            
+            if not eq_terms: return None
+            return f"Y = {intercept_val:.4f} " + " ".join(eq_terms)
+        except Exception:
+            pass # Si falla, usa el método de respaldo
+            
+    # Método de respaldo (por si no hay df)
     if R['via'] == VIA_3:
         sig = [n for n,e in R['effects'].items() if e.get('activo')]
     else:
         sig = [n for n,e in R['effects'].items() if e.get('p',1)<0.05]
-    if not sig: return None
-    return f"Y = {R['y_bar']:.4f} " + " ".join(
-        f"{R['effects'][n]['coef']:+.4f}*{n.replace('*','*')}" for n in sig)
+        
+    terms = [f"{R['effects'][n]['coef']:+.4f}*{n.replace('*','*')}" for n in sig]
+    if R.get('tiene_centro') and R.get('p_curv', 1) < 0.05:
+        coef_curv = R['yc_bar'] - R['yf_bar']
+        terms.append(f"{coef_curv:+.4f}*Curvatura")
+    if not terms: return None
+    return f"Y = {R['y_bar']:.4f} " + " ".join(terms)
 
 # ---------- Funciones de Reporte y Balance ----------
 

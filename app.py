@@ -664,7 +664,7 @@ elif st.session_state.stage == 'report':
 
     st.markdown("### 1. Ecuacion de Regresion")
     st.write(f"**Beta 0 (Media global / Intercepto)** = {R['y_bar']:.4f}")
-    eq = ce._ecuacion_str(R)
+    eq = ce._ecuacion_str(R, df)
     if eq: 
         st.code(eq, language=None)
     else: 
