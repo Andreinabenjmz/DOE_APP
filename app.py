@@ -12,7 +12,7 @@ from docx import Document
 
 import calc_engine as ce
 
-from docx.shared import Inches
+from docx.shared import Inches, Pt
 
 def _insertar_tabla_word(doc, df_tabla):
     """Convierte un DataFrame de Pandas en una tabla bonita de Word."""
