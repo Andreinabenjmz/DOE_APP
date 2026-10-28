@@ -12,7 +12,7 @@ from docx import Document
 
 import calc_engine as ce
 
-from docx.shared import Inches, Pt
+from docx.shared import Inches
 
 def _insertar_tabla_word(doc, df_tabla):
     """Convierte un DataFrame de Pandas en una tabla bonita de Word."""
@@ -459,18 +459,39 @@ elif st.session_state.stage == 'refine':
         st.write(f"**R2 = {R_red['R2']:.4f}**" + (f" | **R2 ajustado = {R_red['R2_adj']:.4f}**" if R_red.get('R2_adj') else ""))
         
         # --- INICIO EXTRA OPCIONAL: Intervalos de Confianza ---
-        with st.expander("🔬 Coeficientes e intervalos de confianza (Opcional)"):
-            if R_red['via'] in (ce.VIA_1, ce.VIA_2):
-                # Reutilizamos la función de statsmodels que ya calcula todo bien
-                coef_df, fit_df = ce.generar_tabla_regresion(df, R_red)
-                st.dataframe(coef_df.round(4), use_container_width=True)
-            else:
-                st.info(
-                    "En la Vía 3 se utiliza el método de Lenth. "
-                    "No se presentan intervalos de confianza convencionales "
-                    "porque este diseño no cuenta con réplicas puras para "
-                    "estimar un error residual independiente."
-                )
+        with st.expander("🔬 Opcional (Nivel Avanzado): Coeficientes con Intervalos de Confianza"):
+            st.markdown("""
+            Esta tabla muestra el error estándar y el rango donde probablemente se encuentra el verdadero coeficiente.
+            **Si el intervalo NO incluye el cero**, el término es estadísticamente significativo.
+            """)
+            t_crit = R_red.get('t_crit', 2.0)
+            mse = R_red.get('MS_resid', 0)
+            N_total = R_red.get('N', 1)
+            err_est = np.sqrt(mse / N_total) if mse > 0 else 0
+            
+            coef_data = [{
+                'Término': 'Intercepto (β0)', 
+                'Coef': round(R_red['y_bar'], 4), 
+                'Error Est.': round(err_est, 4), 
+                't': np.nan, 
+                'IC 95% Inf': np.nan, 
+                'IC 95% Sup': np.nan
+            }]
+            
+            for term, e in R_red['effects'].items():
+                t_val = e['coef'] / err_est if err_est > 0 else 0
+                ic_inf = e['coef'] - (t_crit * err_est)
+                ic_sup = e['coef'] + (t_crit * err_est)
+                coef_data.append({
+                    'Término': term.replace('*', ' x '),
+                    'Coef': round(e['coef'], 4),
+                    'Error Est.': round(err_est, 4),
+                    't': round(t_val, 2),
+                    'IC 95% Inf': round(ic_inf, 4),
+                    'IC 95% Sup': round(ic_sup, 4)
+                })
+            st.dataframe(pd.DataFrame(coef_data), use_container_width=True)
+        # --- FIN EXTRA OPCIONAL ---
 
         with st.expander("🤔 Preguntas de reflexion para tu informe"):
             st.markdown("""
@@ -504,16 +525,6 @@ elif st.session_state.stage == 'diagnostics':
         - ¿Ves alguna tendencia en el gráfico (c)?
         - **Conclusión:** ¿Se cumplen los supuestos? (Si sí, los p-valores del ANOVA son 100% confiables).
         """)
-
-    with st.expander("🔍 Auditoría Técnica: Fórmula Estadística del Modelo"):
-        st.markdown("Esta es la fórmula exacta que la librería `Statsmodels` utiliza internamente para calcular los coeficientes y los residuales. Confirma que el modelo reducido incluye las interacciones seleccionadas.")
-    # Verificamos si la función existe antes de llamarla
-    if hasattr(ce, 'obtener_formula_modelo'):
-        formula_audit = ce.obtener_formula_modelo(R)
-    else:
-        formula_audit = "Fórmula no disponible en esta versión"
-        st.code(formula_audit, language="r")
-        st.caption("Nota: Los dos puntos (:) indican interacciones (ej. A:B). 'Q(\"...\")' es la sintaxis de Statsmodels para nombres con caracteres especiales.")
 
     st.markdown("### 2. Efectos Principales")
     st.markdown("""
@@ -569,7 +580,6 @@ elif st.session_state.stage == 'diagnostics':
     
     st.dataframe(pd.DataFrame(ranking_data), use_container_width=True)
 
-
     with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
         st.markdown("""
         - ¿Cuál es el gráfico con la pendiente más pronunciada? (Ese es el factor dominante).
@@ -577,7 +587,6 @@ elif st.session_state.stage == 'diagnostics':
         - Si hay una especificación (banda verde), ¿qué niveles del factor te mantienen dentro de la spec?
         - **En la tabla de Ranking:** ¿Qué factores se repiten en las primeras posiciones? ¿Qué combinación recomendarías?
         """)
-
 
     st.markdown("### 3. Interacciones")
     st.markdown("""
@@ -587,11 +596,12 @@ elif st.session_state.stage == 'diagnostics':
     - Líneas que **se separan**: Interacción sinérgica (los efectos se potencian).
     """)
 
-    # --- RESTAURANDO EL SELECTOR ---
+    # --- NUEVO: Selector de orden de interacciones ---
     todas_interacciones = [n for n in R['effects'] if len(n.split('*'))==2]
+    
     if todas_interacciones:
         orden_interacciones = st.multiselect(
-            "🛠️ Selecciona y ordena las interacciones a graficar:",
+            "🛠️ Selecciona y ordena las interacciones a graficar (el orden de selección será el orden de los gráficos):",
             options=todas_interacciones,
             default=todas_interacciones, 
             key="selector_interacciones"
@@ -599,8 +609,10 @@ elif st.session_state.stage == 'diagnostics':
         st.session_state.orden_interacciones = orden_interacciones 
     else:
         orden_interacciones = []
+    # -------------------------------------------------
 
-    fns_int = ce._gen_interactions(R, custom_order=orden_interacciones)
+
+    fns_int = ce._gen_interactions(R, custom_order=st.session_state.get('orden_interacciones', []))
     
     if fns_int:
         for fn in fns_int:
@@ -629,26 +641,6 @@ elif st.session_state.stage == 'diagnostics':
             - ¿Qué combinación de niveles comparten todas las barras rojas?
             - ¿El centro (0,0,0) cumple con la especificación?
             """)
-
-    # =====================================================================
-    # COMIENZA EL CÓDIGO DEL PROFILER (Debe ir aquí, justo antes de los botones)
-    # =====================================================================
-    st.markdown("### 5. Optimizador de Respuesta (Profiler)")
-    st.markdown("""
-    Este gráfico evalúa la **ecuación completa del modelo** (incluyendo interacciones) para encontrar la mejor combinación posible de los factores. El punto rojo indica el nivel que debe tomar cada factor para lograr el objetivo.
-    """)
-    
-    obj_actual = st.session_state.get('objetivo', 'max')
-    spec_actual = st.session_state.get('spec', None)
-    
-    fn_profiler, mejor_y = ce._gen_profiler(R, objetivo=obj_actual, spec=spec_actual)
-    st.image(fn_profiler, use_container_width=True)
-    
-    st.info(f"💡 **Predicción Óptima del Modelo:** Con esta configuración, el modelo estima que la respuesta será de **{mejor_y:.2f}**.")
-    # =====================================================================
-    # TERMINA EL CÓDIGO DEL PROFILER
-    # =====================================================================
-
 
     c1, c2 = st.columns(2)
     if c1.button("Volver a Refinar"): st.session_state.stage = 'refine'; st.rerun()
@@ -723,16 +715,20 @@ elif st.session_state.stage == 'report':
                 'SemiNormal': ce._gen_seminormal(R),
                 'Residuales': ce._gen_residuales(df, R),
                 'EfectosPrincipales': ce._gen_main_effects(R, st.session_state.spec),
-                'Profiler': ce._gen_profiler(R, st.session_state.objetivo, st.session_state.spec)[0] 
             }
-            
+
+            # Usar el orden elegido en el paso anterior
+
+            # Obtener el orden de forma segura
             orden_guardado = st.session_state.get('orden_interacciones', None)
+            
+            # Si el orden guardado no existe o está vacío, usar el orden por defecto
             if not orden_guardado:
                 orden_guardado = [n for n in R['effects'] if len(n.split('*'))==2]
                 
             fns_int = ce._gen_interactions(R, custom_order=orden_guardado)
-            if fns_int: figs['Interacciones'] = fns_int
 
+            if fns_int: figs['Interacciones'] = fns_int
             if st.session_state.via == ce.VIA_2:
                 fn_cub = ce._gen_cubo(R)
                 if fn_cub: figs['Cubo'] = fn_cub
@@ -802,7 +798,6 @@ elif st.session_state.stage == 'report':
             # Calcular el ranking para el Word
             cond_medias_word = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
             cond_medias_word.insert(0, 'Corrida', range(1, len(cond_medias_word)+1))
-            es_min = st.session_state.get('objetivo', 'max') == 'min'
             cond_medias_word = cond_medias_word.sort_values(by='Y', ascending=es_min).head(5).reset_index(drop=True)
             
             # Preparar la tabla para Word
@@ -838,25 +833,13 @@ elif st.session_state.stage == 'report':
             doc.add_heading("2.8. Diagnóstico de residuales", level=2)
             if 'Residuales' in figs and os.path.exists(figs['Residuales']):
                 doc.add_picture(figs['Residuales'], width=Inches(6.5))
-                doc.add_paragraph("Auditoría técnica: Fórmula del modelo evaluada para los residuales:")
-                formula_audit = ce.obtener_formula_modelo(R)
-                doc.add_paragraph(formula_audit, style='Intense Quote')
-                doc.add_paragraph("Interpretación: [Analiza los 3 supuestos: normalidad, homocedasticidad e independencia]")
+            doc.add_paragraph("Interpretación: [Analiza los 3 supuestos: normalidad, homocedasticidad e independencia]")
             
             doc.add_heading("2.9. Ecuación de regresión", level=2)
             doc.add_paragraph(f"Beta 0 = {R['y_bar']:.4f}")
             if eq: doc.add_paragraph(eq, style='Intense Quote')
             doc.add_paragraph("Interpretación de los coeficientes: [Explica qué significa cada término en la ecuación]")
-
-            # =======================================================
-            # AGREGA ESTO PARA INSERTAR EL PROFILER EN EL WORD
-            # =======================================================
-            doc.add_heading("2.10. Optimizador de Respuesta (Profiler)", level=2)
-            if 'Profiler' in figs and os.path.exists(figs['Profiler']):
-                doc.add_picture(figs['Profiler'], width=Inches(6.5))
-            doc.add_paragraph("Interpretación: [Explica la configuración óptima y el valor predicho]")
-            # =======================================================
-
+       
             doc.add_heading("3. Conclusiones", level=1)
             doc.add_paragraph("1. [Conclusión 1]")
             doc.add_paragraph("2. [Conclusión 2]")

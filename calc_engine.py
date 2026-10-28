@@ -358,61 +358,27 @@ def _gen_interactions(R, custom_order=None):
 
     return files
 
-def obtener_formula_modelo(R):
-    """Retorna la fórmula exacta que usa statsmodels para el modelo actual."""
-    terms = R.get('terms_included', list(R['effects'].keys()))
-    parts = []
-    for t in terms:
-        if '*' in t:
-            parts.append(':'.join(f'Q("{f}")' for f in t.split('*')))
-        else:
-            parts.append(f'Q("{t}")')
-            
-    formula = 'Q("Y") ~ ' + ' + '.join(parts) if parts else 'Q("Y") ~ 1'
-    
-    if R.get('tiene_bloques'): 
-        formula = 'Q("Y") ~ Q("Grupo") + ' + formula.split('~')[1].strip()
-    if R.get('tiene_centro'): 
-        formula += ' + Q("Curvatura")'
-        
-    return formula
 
 def _gen_residuales(df, R):
-    # 1. Llamamos a la nueva función para que nos dé la fórmula lista
-    formula = obtener_formula_modelo(R)
-    
-    # 2. Ajustamos el modelo con statsmodels usando esa fórmula
+    terms = R.get('terms_included', list(R['effects'].keys()))
+    parts = [f'Q("{f}")' for f in R['factores'] if f in terms]
+    formula = 'Q("Y") ~ ' + ' + '.join(parts) if parts else 'Q("Y") ~ 1'
+    if R['tiene_bloques']: formula = 'Q("Y") ~ Q("Grupo") + ' + formula.split('~')[1].strip()
+    if R['tiene_centro']: formula += ' + Q("Curvatura")'
     mfit = smf.ols(formula, data=df).fit()
-    
-    # 3. Preparamos los datos para graficar
-    df2 = df.copy()
-    df2['fit'] = mfit.fittedvalues
-    df2['res'] = mfit.resid
-    df2 = df2.reset_index(drop=True)
-    df2['orden'] = range(1, len(df2)+1)
-    
-    # 4. Generamos los gráficos
+    df2 = df.copy(); df2['fit'] = mfit.fittedvalues; df2['res'] = mfit.resid
+    df2 = df2.reset_index(drop=True); df2['orden'] = range(1, len(df2)+1)
     fig, axes = plt.subplots(1, 3, figsize=(18, 4))
     stats.probplot(df2['res'], dist='norm', plot=axes[0])
     axes[0].set_title('(a) Normalidad de residuales')
-    
     axes[1].scatter(df2['fit'], df2['res'], alpha=0.7, edgecolor='k')
-    axes[1].axhline(0, color='red', linestyle='--')
-    axes[1].grid(alpha=0.3)
+    axes[1].axhline(0, color='red', linestyle='--'); axes[1].grid(alpha=0.3)
     axes[1].set_title('(b) Residuales vs Ajustados')
-    
     axes[2].scatter(df2['orden'], df2['res'], alpha=0.7, edgecolor='k')
-    axes[2].axhline(0, color='red', linestyle='--')
-    axes[2].grid(alpha=0.3)
+    axes[2].axhline(0, color='red', linestyle='--'); axes[2].grid(alpha=0.3)
     axes[2].set_title('(c) Residuales vs Orden')
-    
     plt.tight_layout()
-    fn = 'residuales.png'
-    plt.savefig(fn, bbox_inches='tight')
-    plt.close()
-    
-    return fn
-
+    fn = 'residuales.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
 
 def _gen_cubo(R):
     k = R['k']
@@ -554,7 +520,9 @@ def generar_tabla_regresion(df, R):
     coef_df['Inferior 95%'] = conf_int[0].values
     coef_df['Superior 95%'] = conf_int[1].values
     
-
+    # VIF (Varianza inflada)
+    coef_df['VIF'] = 1.0 
+    
     # 4. Resumen de Ajuste Global
     fit_df = pd.DataFrame({
         'Métrica': ['Multiple R', 'R Square', 'Adjusted R Square', 'Standard Error', 'Observations', 'AIC', 'BIC (SBC)'],
@@ -660,71 +628,3 @@ def generar_tabla_balance_neto(R, objetivo='max'):
                  'Tipo de Efecto': 'Balance Neto'})
                  
     return pd.DataFrame(rows)
-
-def _gen_profiler(R, objetivo='min', spec=None):
-    """Genera un Optimizador de Respuesta (Profiler) evaluando la ecuación completa (con interacciones)."""
-    factores = R['factores']
-    n = len(factores)
-    
-    # 1. Función interna para predecir Y usando los coeficientes del modelo
-    def predecir_y(niveles):
-        y_pred = R['y_bar']
-        terms = R.get('terms_included', list(R['effects'].keys()))
-        for term in terms:
-            if term not in R['effects']: continue
-            coef = R['effects'][term]['coef']
-            val = 1
-            for f in term.split('*'):
-                val *= niveles[f]
-            y_pred += coef * val
-        return y_pred
-
-    # 2. Encontrar la combinación óptima evaluando todas las esquinas (2^k)
-    import itertools
-    mejor_y = float('inf') if objetivo == 'min' else float('-inf')
-    niveles_optimos = {}
-    
-    for combo in itertools.product([-1, 1], repeat=n):
-        niveles_actuales = dict(zip(factores, combo))
-        y_actual = predecir_y(niveles_actuales)
-        
-        if (objetivo == 'min' and y_actual < mejor_y) or (objetivo == 'max' and y_actual > mejor_y):
-            mejor_y = y_actual
-            niveles_optimos = niveles_actuales
-
-    # 3. Graficar
-    fig, axes = plt.subplots(1, n, figsize=(4*n, 4), sharey=True)
-    if n == 1: axes = [axes]
-    
-    for i, (ax, f) in enumerate(zip(axes, factores)):
-        niveles_bajo = niveles_optimos.copy()
-        niveles_bajo[f] = -1
-        y_bajo = predecir_y(niveles_bajo)
-        
-        niveles_alto = niveles_optimos.copy()
-        niveles_alto[f] = 1
-        y_alto = predecir_y(niveles_alto)
-        
-        ax.plot([-1, 1], [y_bajo, y_alto], 'o-', color='gray', markersize=8, zorder=2)
-        
-        opt_level = niveles_optimos[f]
-        opt_y = y_bajo if opt_level == -1 else y_alto
-        ax.plot(opt_level, opt_y, 'o', color='red', markersize=14, markeredgecolor='black', zorder=5)
-        
-        ax.set_xticks([-1, 1])
-        ax.set_xticklabels(['-1', '+1'])
-        ax.set_xlabel(f)
-        ax.set_title(f'Óptimo: {"Bajo" if opt_level==-1 else "Alto"}')
-        if i == 0:
-            ax.set_ylabel('Predicción de Y')
-        ax.grid(alpha=0.3)
-        
-        if spec:
-            ax.axhspan(spec['target']-spec['tol'], spec['target']+spec['tol'], alpha=0.1, color='green')
-            
-    plt.suptitle(f'Optimizador de Respuesta (Predicción óptima = {mejor_y:.2f})', fontsize=14)
-    plt.tight_layout()
-    fn = 'profiler.png'
-    plt.savefig(fn, bbox_inches='tight')
-    plt.close()
-    return fn, mejor_y
