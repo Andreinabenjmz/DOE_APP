@@ -350,19 +350,23 @@ def _gen_interactions(R, custom_order=None):
         fig, axes = plt.subplots(1, len(chunk), figsize=(5*len(chunk), 4))
         if len(chunk) == 1: 
             axes = [axes]
-            
-        for ax, name in zip(axes, chunk):
-            # CORRECCIÓN PARA INTERACCIONES DE 2, 3 O 4 VÍAS
-            parts = name.split('*')
-            if len(parts) == 2:
-                f1, f2 = parts
-                it = R['interactions'][(f1,f2)]
-                ax.plot([-1,1], [it['mll'], it['mhl']], 'o-', label=f'{f2}=-1')
-                ax.plot([-1,1], [it['mlh'], it['mhh']], 's--', label=f'{f2}=+1')
-                ax.set_xticks([-1,1]); ax.set_xticklabels([f'{f1}=-1', f'{f1}=+1'])
-                ax.set_xlabel(f1); ax.set_ylabel('Media de Y')
-                suf = ' (exploratoria)' if R['via'] == VIA_3 else (' (NO significativa)' if es_fb else '')
-                ax.set_title(f'Interaccion {name}{suf}'); ax.legend(); ax.grid(alpha=0.3)
+
+    for ax, name in zip(axes, chunk):
+        parts = name.split('*')
+        if len(parts) == 2:
+            f1, f2 = parts
+            it = R['interactions'][(f1, f2)]
+            ax.plot([-1, 1], [it['mll'], it['mhl']], 'o-', label=f'{f2}=-1')
+            ax.plot([-1, 1], [it['mlh'], it['mhh']], 's--', label=f'{f2}=+1')
+            ax.set_xticks([-1, 1]); ax.set_xticklabels([f'{f1}=-1', f'{f1}=+1'])
+            ax.set_xlabel(f1); ax.set_ylabel('Media de Y')
+            if R['via'] == VIA_3:
+                suf = ' (exploratoria)'
+            else:
+                p_val = R['effects'][name].get('p', 1)
+                suf = ' (significativa)' if pd.notna(p_val) and p_val < 0.05 else ' (NO significativa)'
+            ax.set_title(f'Interaccion {name}{suf}')
+            ax.legend(); ax.grid(alpha=0.3)
             
         plt.tight_layout()
         # Guardar la imagen del bloque (ej. interacciones_1.png, interacciones_2.png)
@@ -375,10 +379,20 @@ def _gen_interactions(R, custom_order=None):
 
 def _gen_residuales(df, R):
     terms = R.get('terms_included', list(R['effects'].keys()))
-    parts = [f'Q("{f}")' for f in R['factores'] if f in terms]
+    parts = []
+    # Efectos principales
+    for f in R['factores']:
+        if f in terms:
+            parts.append(f'Q("{f}")')
+    # Interacciones (2-way y superiores)
+    for t in terms:
+        if '*' in t:
+            parts.append(':'.join(f'Q("{f}")' for f in t.split('*')))
     formula = 'Q("Y") ~ ' + ' + '.join(parts) if parts else 'Q("Y") ~ 1'
-    if R['tiene_bloques']: formula = 'Q("Y") ~ Q("Grupo") + ' + formula.split('~')[1].strip()
-    if R['tiene_centro']: formula += ' + Q("Curvatura")'
+    if R['tiene_bloques']:
+        formula = 'Q("Y") ~ Q("Grupo") + ' + formula.split('~')[1].strip()
+    if R['tiene_centro']:
+        formula += ' + Q("Curvatura")'
     mfit = smf.ols(formula, data=df).fit()
     df2 = df.copy(); df2['fit'] = mfit.fittedvalues; df2['res'] = mfit.resid
     df2 = df2.reset_index(drop=True); df2['orden'] = range(1, len(df2)+1)
@@ -572,70 +586,78 @@ def generar_texto_pareto(R):
 
 
 def generar_tabla_balance_neto(R, objetivo='max'):
-    """Genera la tabla de balance neto adaptada al objetivo (maximizar o minimizar)."""
+    """Tabla de contribuciones al óptimo, calculada enumerando las 2^k configuraciones."""
+    import itertools
     y_bar = R['y_bar']
-    
-    # Filtrar solo los términos significativos
-    sig_terms = [n for n, e in R['effects'].items() if (e.get('p', 1) < 0.05) or (R['via'] == VIA_3 and e.get('activo'))]
-    
-    rows = []
-    rows.append({'Concepto (Factor / Interacción)': 'Base del modelo (Intercepto)', 
-                 'Efecto (Puntos)': round(y_bar, 2), 
-                 'Impacto porcentual (%)': 100.00, 
-                 'Tipo de Efecto': 'Punto de partida'})
-    
-    main_effects = []
-    interactions = []
-    
+    factores = R['factores']
+    k = len(factores)
+    sig_terms = [n for n, e in R['effects'].items()
+                 if (e.get('p', 1) < 0.05) or (R['via'] == VIA_3 and e.get('activo'))]
+
+    # 1. Enumerar todas las 2^k configuraciones y predecir Y con el modelo
+    combos = list(itertools.product([-1, 1], repeat=k))
+    preds = []
+    for combo in combos:
+        pred = y_bar
+        for name in sig_terms:
+            coef = R['effects'][name]['coef']
+            # Producto de niveles de los factores del término
+            val = 1
+            for f in name.split('*'):
+                val *= combo[factores.index(f)]
+            pred += coef * val
+        preds.append(pred)
+
+    # 2. Encontrar el índice del óptimo según el objetivo
+    best_idx = int(np.argmax(preds)) if objetivo == 'max' else int(np.argmin(preds))
+    best_combo = combos[best_idx]
+
+    # 3. Construir la tabla: contribución de cada término EN la config óptima
+    rows = [{'Concepto (Factor / Interacción)': 'Base del modelo (Intercepto)',
+             'Contribución (Puntos)': round(y_bar, 2),
+             'Impacto porcentual (%)': 100.00,
+             'Tipo de Efecto': 'Punto de partida'}]
+
+    main_effects, interactions = [], []
     for name in sig_terms:
-        e = R['effects'][name]
-        eff = e['efecto']
-        pct = (eff / y_bar) * 100
-        
-        # Lógica de beneficio según el objetivo
-        if objetivo == 'max':
-            es_beneficio = eff > 0
-            tipo = 'Beneficio' if es_beneficio else 'Penalización'
-        else:
-            es_beneficio = eff < 0 # Si busco minimizar, un efecto negativo es bueno
-            tipo = 'Beneficio (Reduce)' if es_beneficio else 'Penalización (Aumenta)'
-        
-        row_data = {
+        coef = R['effects'][name]['coef']
+        val = 1
+        for f in name.split('*'):
+            val *= best_combo[factores.index(f)]
+        contrib = coef * val  # contribución real al Y en el óptimo
+        pct = (contrib / y_bar) * 100 if y_bar != 0 else 0
+        row = {
             'Concepto (Factor / Interacción)': name.replace('*', ' x '),
-            'Efecto (Puntos)': round(eff, 2),
+            'Contribución (Puntos)': round(contrib, 2),
             'Impacto porcentual (%)': round(pct, 2),
-            'Tipo de Efecto': tipo
+            'Tipo de Efecto': 'Beneficio' if contrib > 0 else ('Neutro' if contrib == 0 else 'Penalización'),
         }
-        
-        if '*' not in name:
-            main_effects.append(row_data)
-        else:
-            interactions.append(row_data)
-            
-    sum_main = sum(r['Efecto (Puntos)'] for r in main_effects)
+        (main_effects if '*' not in name else interactions).append(row)
+
+    sum_main = sum(r['Contribución (Puntos)'] for r in main_effects)
+    sum_int = sum(r['Contribución (Puntos)'] for r in interactions)
     pct_main = sum(r['Impacto porcentual (%)'] for r in main_effects)
-    sum_int = sum(r['Efecto (Puntos)'] for r in interactions)
     pct_int = sum(r['Impacto porcentual (%)'] for r in interactions)
-    
+
     for r in main_effects: rows.append(r)
     if main_effects:
-        rows.append({'Concepto (Factor / Interacción)': 'Suma de Efectos Principales', 
-                     'Efecto (Puntos)': round(sum_main, 2), 
-                     'Impacto porcentual (%)': round(pct_main, 2), 
+        rows.append({'Concepto (Factor / Interacción)': 'Suma de Efectos Principales',
+                     'Contribución (Puntos)': round(sum_main, 2),
+                     'Impacto porcentual (%)': round(pct_main, 2),
                      'Tipo de Efecto': 'Totales'})
-                     
     for r in interactions: rows.append(r)
     if interactions:
-        rows.append({'Concepto (Factor / Interacción)': 'Suma de Interacciones', 
-                     'Efecto (Puntos)': round(sum_int, 2), 
-                     'Impacto porcentual (%)': round(pct_int, 2), 
+        rows.append({'Concepto (Factor / Interacción)': 'Suma de Interacciones',
+                     'Contribución (Puntos)': round(sum_int, 2),
+                     'Impacto porcentual (%)': round(pct_int, 2),
                      'Tipo de Efecto': 'Totales'})
-                     
+
     final_val = y_bar + sum_main + sum_int
-    final_pct = 100.00 + pct_main + pct_int
-    rows.append({'Concepto (Factor / Interacción)': 'Resultado Final Estimado', 
-                 'Efecto (Puntos)': round(final_val, 2), 
-                 'Impacto porcentual (%)': round(final_pct, 2), 
+    rows.append({'Concepto (Factor / Interacción)': 'Resultado Final (Predicción Óptima)',
+                 'Contribución (Puntos)': round(final_val, 2),
+                 'Impacto porcentual (%)': round(100 + pct_main + pct_int, 2),
                  'Tipo de Efecto': 'Balance Neto'})
-                 
+    # Sanity check: final_val debe ser igual a preds[best_idx] (por construcción)
+    assert abs(final_val - preds[best_idx]) < 1e-6, "Bug de suma en balance neto"
     return pd.DataFrame(rows)
+
