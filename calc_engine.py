@@ -112,7 +112,21 @@ def _calc_interactions(df, factores):
 
 # ---------- Via 1 con soporte para terminos ----------
 def calcular_via1_con_terminos(df, factores, terms=None):
-    k = len(factores); n_r = df['Grupo'].nunique(); N = len(df); Nf = n_r*2**k
+    k = len(factores); n_r = df['Grupo'].nunique(); N = len(df); 
+    # --- VALIDACIÓN: cada réplica debe contener las 2^k esquinas exactas ---
+    esperadas = set(itertools.product([-1, 1], repeat=k))
+    for g, sub in df.groupby('Grupo'):
+        obtenidas = set(map(tuple, sub[factores].to_numpy()))
+        if len(sub) != 2**k or obtenidas != esperadas:
+            raise ValueError(
+                f"La réplica '{g}' tiene {len(sub)} corridas "
+                f"({len(obtenidas)} esquinas únicas de {2**k} esperadas). "
+                f"El diseño 2^{k} requiere que cada réplica contenga todas las esquinas "
+                f"exactamente una vez (sin duplicados, sin faltantes)."
+            )
+    # ----------------------------------------------------------------------
+    
+    Nf = n_r*2**k
     G = df['Y'].sum(); y = G/N
     SS_t = (df['Y']**2).sum() - G**2/N
     ef_all = _calc_effects(df, factores, Nf)
