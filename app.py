@@ -289,15 +289,23 @@ elif st.session_state.stage == 'full_model':
     factores = st.session_state.factores
     via = st.session_state.via
 
+
     if st.session_state.R_full is None:
         with st.spinner("Calculando..."):
-            if via == ce.VIA_1:
-                R = ce.calcular_via1_con_terminos(df, factores, terms=None)
-            elif via == ce.VIA_2:
-                R = ce.calcular_via2_con_terminos(df, factores, terms=None)
-            else:
-                R = ce.calcular_via3(df, factores)
-            st.session_state.R_full = R
+            try:
+                if via == ce.VIA_1:
+                    R = ce.calcular_via1_con_terminos(df, factores, terms=None)
+                elif via == ce.VIA_2:
+                    R = ce.calcular_via2_con_terminos(df, factores, terms=None)
+                else:
+                    R = ce.calcular_via3(df, factores)
+                st.session_state.R_full = R
+            except Exception as e:
+                st.error(f"❌ {e}")
+                st.info("Revisa tu archivo: cada bloque/réplica debe contener todas las "
+                    "2^k combinaciones de los factores en {-1, +1}, sin duplicados.")
+                st.stop()
+            
     R = st.session_state.R_full
 
     st.markdown("### 1. Tabla ANOVA")
