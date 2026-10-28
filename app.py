@@ -655,13 +655,8 @@ elif st.session_state.stage == 'report':
     slug = nombre.replace(' ', '_').replace('/', '-')
 
     st.markdown("### 1. Ecuacion de Regresion")
-    
-    beta0_mostrar = R['yf_bar'] if (R.get('tiene_centro') and R.get('p_curv',1) < 0.05) else R['y_bar']
-    st.write(f"**Beta 0 (Intercepto del modelo)** = {beta0_mostrar:.4f}")
-    if R.get('tiene_centro') and R.get('p_curv',1) < 0.05:
-        st.caption(f"Nota: el intercepto es la media de las esquinas (ȳf = {R['yf_bar']:.4f}); la media general (ȳ = {R['y_bar']:.4f}) difiere por la curvatura y los bloques.")
-
-    eq = ce._ecuacion_str(R, df=df)
+    st.write(f"**Beta 0 (Media global / Intercepto)** = {R['y_bar']:.4f}")
+    eq = ce._ecuacion_str(R)
     if eq: 
         st.code(eq, language=None)
     else: 
@@ -841,10 +836,7 @@ elif st.session_state.stage == 'report':
             doc.add_paragraph("Interpretación: [Analiza los 3 supuestos: normalidad, homocedasticidad e independencia]")
             
             doc.add_heading("2.9. Ecuación de regresión", level=2)
-            doc.add_paragraph(f"Beta 0 (Intercepto del modelo) = {beta0_mostrar:.4f}")
-            if R.get('tiene_centro') and R.get('p_curv',1) < 0.05:
-            doc.add_paragraph(f"(Media de esquinas ȳf = {R['yf_bar']:.4f}; media general ȳ = {R['y_bar']:.4f}.)")
-
+            doc.add_paragraph(f"Beta 0 = {R['y_bar']:.4f}")
             if eq: doc.add_paragraph(eq, style='Intense Quote')
             doc.add_paragraph("Interpretación de los coeficientes: [Explica qué significa cada término en la ecuación]")
        

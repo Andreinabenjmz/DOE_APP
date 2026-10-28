@@ -466,38 +466,14 @@ def _gen_spec(df, R, spec):
     fn = 'especificacion.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
 
 # ---------- Ecuacion ----------
-def _ecuacion_str(R, df=None):
-    # Intercepto correcto según el modelo
-    if R.get('tiene_centro') and R.get('p_curv', 1) < 0.05:
-        intercept = R['yf_bar']   # esquinas → predicción consistente
-    else:
-        intercept = R['y_bar']
-
-    # Términos significativos
+def _ecuacion_str(R):
     if R['via'] == VIA_3:
-        sig = [n for n, e in R['effects'].items() if e.get('activo')]
+        sig = [n for n,e in R['effects'].items() if e.get('activo')]
     else:
-        sig = [n for n, e in R['effects'].items() if e.get('p', 1) < 0.05]
-
-    parts = [f"Y = {intercept:.4f}"]
-    for n in sig:
-        parts.append(f"{R['effects'][n]['coef']:+.4f}*{n}")
-
-    # Curvatura como dummy [Centro] 0/1
-    if R.get('tiene_centro') and R.get('p_curv', 1) < 0.05:
-        beta_c = R['yc_bar'] - R['yf_bar']  # = -2.17 en P2
-        parts.append(f"{beta_c:+.4f}*[Centro]")
-
-    eq = " ".join(parts)
-
-    # Bloques como ajuste aditivo separado (no como término)
-    if df is not None and R.get('tiene_bloques') and R.get('p_blocks', 1) < 0.05:
-        bm = df.groupby('Grupo')['Y'].mean()
-        eq += "\n\n# Ajuste aditivo por bloque (sumar al valor predicho):"
-        for b, mu_b in bm.items():
-            eq += f"\n#   Bloque {b}: {mu_b - R['y_bar']:+.4f}"
-    return eq
-
+        sig = [n for n,e in R['effects'].items() if e.get('p',1)<0.05]
+    if not sig: return None
+    return f"Y = {R['y_bar']:.4f} " + " ".join(
+        f"{R['effects'][n]['coef']:+.4f}*{n.replace('*','*')}" for n in sig)
 
 # ---------- Funciones de Reporte y Balance ----------
 
