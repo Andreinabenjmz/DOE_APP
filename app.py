@@ -12,7 +12,7 @@ from docx import Document
 
 import calc_engine as ce
 
-from docx.shared import Inches, Pt
+from docx.shared import Inches
 
 def _insertar_tabla_word(doc, df_tabla):
     """Convierte un DataFrame de Pandas en una tabla bonita de Word."""
@@ -289,23 +289,15 @@ elif st.session_state.stage == 'full_model':
     factores = st.session_state.factores
     via = st.session_state.via
 
-
     if st.session_state.R_full is None:
         with st.spinner("Calculando..."):
-            try:
-                if via == ce.VIA_1:
-                    R = ce.calcular_via1_con_terminos(df, factores, terms=None)
-                elif via == ce.VIA_2:
-                    R = ce.calcular_via2_con_terminos(df, factores, terms=None)
-                else:
-                    R = ce.calcular_via3(df, factores)
-                st.session_state.R_full = R
-            except Exception as e:
-                st.error(f"❌ {e}")
-                st.info("Revisa tu archivo: cada bloque/réplica debe contener todas las "
-                    "2^k combinaciones de los factores en {-1, +1}, sin duplicados.")
-                st.stop()
-            
+            if via == ce.VIA_1:
+                R = ce.calcular_via1_con_terminos(df, factores, terms=None)
+            elif via == ce.VIA_2:
+                R = ce.calcular_via2_con_terminos(df, factores, terms=None)
+            else:
+                R = ce.calcular_via3(df, factores)
+            st.session_state.R_full = R
     R = st.session_state.R_full
 
     st.markdown("### 1. Tabla ANOVA")
@@ -555,8 +547,7 @@ elif st.session_state.stage == 'diagnostics':
         })
     st.dataframe(pd.DataFrame(filas_ef), use_container_width=True)
     st.caption("✍️ **Para tu informe:** En la columna de interpretación, escribe qué significa cada efecto en tu proceso (ej. 'El soporte grande favorece la viabilidad').")
-
-
+    
     # --- NUEVO: Tabla de Ranking de Mejores Condiciones ---
     st.markdown("#### 🏆 Ranking de Condiciones Observadas (Top 5)")
     st.markdown("""
@@ -564,30 +555,21 @@ elif st.session_state.stage == 'diagnostics':
     *(Ordenadas de mayor a menor según la media de Y)*
     """)
     
-    # 0. Guardar el orden original de las condiciones (esquinas) ANTES del groupby
-    #    (asignamos 1, 2, 3... solo a cada combinación ÚNICA en orden de aparición,
-    #     para que coincida con la fila del Excel aunque haya réplicas o bloques)
-    esquinas_df = df[df['Curvatura'] == 0]
-    orden_original = {}
-    contador = 0
-    for _, row in esquinas_df.iterrows():
-        combo = tuple(row[f] for f in st.session_state.factores)
-        if combo not in orden_original:
-            contador += 1
-            orden_original[combo] = contador
-
     # 1. Calcular medias por combinación
     cond_medias = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
     
-    # 2. Ordenar y sacar el Top 5 según el objetivo
+    # 2. Agregar el número de corrida (1 al N, en el orden original)
+    cond_medias.insert(0, 'Corrida', range(1, len(cond_medias)+1))
+    
+    # 3. Ordenar y sacar el Top 5
+    # Ordenar según el objetivo (max = descendente, min = ascendente)
     es_min = st.session_state.get('objetivo', 'max') == 'min'
     cond_medias = cond_medias.sort_values(by='Y', ascending=es_min).head(5).reset_index(drop=True)
     
-    # 3. Construir la tabla (Corrida ahora sí coincide con el Excel)
+    # 4. Construir la tabla
     ranking_data = []
     for idx, row in cond_medias.iterrows():
-        combo = tuple(row[f] for f in st.session_state.factores)
-        fila = {'Posición': idx + 1, 'Corrida': orden_original[combo]}
+        fila = {'Posición': idx + 1, 'Corrida': int(row['Corrida'])}
         for f in st.session_state.factores:
             val = row[f]
             if val == -1: fila[f] = "Nivel Bajo (-1)"
@@ -671,7 +653,6 @@ elif st.session_state.stage == 'report':
     df = st.session_state.df
     nombre = st.session_state.nombre
     slug = nombre.replace(' ', '_').replace('/', '-')
-    es_min = st.session_state.get('objetivo', 'max') == 'min'   
 
     st.markdown("### 1. Ecuacion de Regresion")
     st.write(f"**Beta 0 (Media global / Intercepto)** = {R['y_bar']:.4f}")
@@ -811,45 +792,26 @@ elif st.session_state.stage == 'report':
                 doc.add_picture(figs['EfectosPrincipales'], width=Inches(6))
             doc.add_paragraph("Interpretación de los efectos: [Escribe aquí qué significa cada efecto en el proceso]")
 
-            # --- NUEVO: Ranking Top 5 (con Corrida correcta) ---
+            # --- NUEVO: Ranking Top 5 ---
             doc.add_heading("2.5. Condiciones Recomendadas (Ranking)", level=2)
             
-            # 0. Guardar el orden original (misma lógica que en diagnostics)
-            esquinas_word = df[df['Curvatura'] == 0]
-            orden_original_word = {}
-            contador_word = 0
-            for _, row in esquinas_word.iterrows():
-                combo = tuple(row[f] for f in st.session_state.factores)
-                if combo not in orden_original_word:
-                    contador_word += 1
-                    orden_original_word[combo] = contador_word
-            
-            # 1. Calcular medias
+            # Calcular el ranking para el Word
             cond_medias_word = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
-            
-            # 2. Asignar corrida real
-            cond_medias_word.insert(0, 'Corrida', cond_medias_word.apply(
-                lambda row: orden_original_word[tuple(row[f] for f in st.session_state.factores)], axis=1
-            ))
-            
-            # 3. Ordenar y Top 5
+            cond_medias_word.insert(0, 'Corrida', range(1, len(cond_medias_word)+1))
             cond_medias_word = cond_medias_word.sort_values(by='Y', ascending=es_min).head(5).reset_index(drop=True)
             
-            # 4. Preparar la tabla para Word
+            # Preparar la tabla para Word
             tabla_word = cond_medias_word.copy()
             tabla_word.insert(0, 'Posición', range(1, len(tabla_word)+1))
             
             # Reemplazar -1 y 1 por texto más amigable
             for f in st.session_state.factores:
-                tabla_word[f] = tabla_word[f].apply(
-                    lambda x: "Bajo (-1)" if x==-1 else ("Alto (+1)" if x==1 else "Centro (0)")
-                )
+                tabla_word[f] = tabla_word[f].apply(lambda x: "Bajo (-1)" if x==-1 else ("Alto (+1)" if x==1 else "Centro (0)"))
                 
             tabla_word = tabla_word.rename(columns={'Y': 'Media de Y'})
             
             _insertar_tabla_word(doc, tabla_word)
             doc.add_paragraph("Recomendación operativa: [Escribe aquí la combinación que sugieres y por qué]")
-            
             # -----------------------------
 
             if 'Interacciones' in figs and figs['Interacciones']:
