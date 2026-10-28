@@ -520,9 +520,6 @@ def generar_tabla_regresion(df, R):
     coef_df['Inferior 95%'] = conf_int[0].values
     coef_df['Superior 95%'] = conf_int[1].values
     
-    # VIF (Varianza inflada)
-    coef_df['VIF'] = 1.0 
-    
     # 4. Resumen de Ajuste Global
     fit_df = pd.DataFrame({
         'Métrica': ['Multiple R', 'R Square', 'Adjusted R Square', 'Standard Error', 'Observations', 'AIC', 'BIC (SBC)'],
