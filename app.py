@@ -547,7 +547,8 @@ elif st.session_state.stage == 'diagnostics':
         })
     st.dataframe(pd.DataFrame(filas_ef), use_container_width=True)
     st.caption("✍️ **Para tu informe:** En la columna de interpretación, escribe qué significa cada efecto en tu proceso (ej. 'El soporte grande favorece la viabilidad').")
-    
+
+
     # --- NUEVO: Tabla de Ranking de Mejores Condiciones ---
     st.markdown("#### 🏆 Ranking de Condiciones Observadas (Top 5)")
     st.markdown("""
@@ -555,21 +556,30 @@ elif st.session_state.stage == 'diagnostics':
     *(Ordenadas de mayor a menor según la media de Y)*
     """)
     
+    # 0. Guardar el orden original de las condiciones (esquinas) ANTES del groupby
+    #    (asignamos 1, 2, 3... solo a cada combinación ÚNICA en orden de aparición,
+    #     para que coincida con la fila del Excel aunque haya réplicas o bloques)
+    esquinas_df = df[df['Curvatura'] == 0]
+    orden_original = {}
+    contador = 0
+    for _, row in esquinas_df.iterrows():
+        combo = tuple(row[f] for f in st.session_state.factores)
+        if combo not in orden_original:
+            contador += 1
+            orden_original[combo] = contador
+
     # 1. Calcular medias por combinación
     cond_medias = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
     
-    # 2. Agregar el número de corrida (1 al N, en el orden original)
-    cond_medias.insert(0, 'Corrida', range(1, len(cond_medias)+1))
-    
-    # 3. Ordenar y sacar el Top 5
-    # Ordenar según el objetivo (max = descendente, min = ascendente)
+    # 2. Ordenar y sacar el Top 5 según el objetivo
     es_min = st.session_state.get('objetivo', 'max') == 'min'
     cond_medias = cond_medias.sort_values(by='Y', ascending=es_min).head(5).reset_index(drop=True)
     
-    # 4. Construir la tabla
+    # 3. Construir la tabla (Corrida ahora sí coincide con el Excel)
     ranking_data = []
     for idx, row in cond_medias.iterrows():
-        fila = {'Posición': idx + 1, 'Corrida': int(row['Corrida'])}
+        combo = tuple(row[f] for f in st.session_state.factores)
+        fila = {'Posición': idx + 1, 'Corrida': orden_original[combo]}
         for f in st.session_state.factores:
             val = row[f]
             if val == -1: fila[f] = "Nivel Bajo (-1)"
