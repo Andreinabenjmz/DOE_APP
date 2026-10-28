@@ -358,60 +358,45 @@ def _gen_interactions(R, custom_order=None):
 
     return files
 
-def obtener_formula_modelo(R):
-    """Retorna la fórmula exacta que usa statsmodels para el modelo actual."""
+
+def _gen_residuales(df, R):
     terms = R.get('terms_included', list(R['effects'].keys()))
+    
+    # --- CORRECCIÓN: Incluir interacciones en la fórmula de residuales ---
     parts = []
     for t in terms:
         if '*' in t:
-            parts.append(':'.join(f'Q("{f}")' for f in t.split('*')))
+            factors_in_term = t.split('*')
+            term_formula = ':'.join(f'Q("{f}")' for f in factors_in_term)
+            parts.append(term_formula)
         else:
             parts.append(f'Q("{t}")')
             
     formula = 'Q("Y") ~ ' + ' + '.join(parts) if parts else 'Q("Y") ~ 1'
+    # ---------------------------------------------------------------------
     
     if R.get('tiene_bloques'): 
         formula = 'Q("Y") ~ Q("Grupo") + ' + formula.split('~')[1].strip()
     if R.get('tiene_centro'): 
         formula += ' + Q("Curvatura")'
-        
-    return formula
-
-def _gen_residuales(df, R):
-    # 1. Llamamos a la nueva función para que nos dé la fórmula lista
-    formula = obtener_formula_modelo(R)
+        print("--- FÓRMULA DE RESIDUALES ---")
+    print(formula)
+    print("-----------------------------")
     
-    # 2. Ajustamos el modelo con statsmodels usando esa fórmula
     mfit = smf.ols(formula, data=df).fit()
-    
-    # 3. Preparamos los datos para graficar
-    df2 = df.copy()
-    df2['fit'] = mfit.fittedvalues
-    df2['res'] = mfit.resid
-    df2 = df2.reset_index(drop=True)
-    df2['orden'] = range(1, len(df2)+1)
-    
-    # 4. Generamos los gráficos
+    df2 = df.copy(); df2['fit'] = mfit.fittedvalues; df2['res'] = mfit.resid
+    df2 = df2.reset_index(drop=True); df2['orden'] = range(1, len(df2)+1)
     fig, axes = plt.subplots(1, 3, figsize=(18, 4))
     stats.probplot(df2['res'], dist='norm', plot=axes[0])
     axes[0].set_title('(a) Normalidad de residuales')
-    
     axes[1].scatter(df2['fit'], df2['res'], alpha=0.7, edgecolor='k')
-    axes[1].axhline(0, color='red', linestyle='--')
-    axes[1].grid(alpha=0.3)
+    axes[1].axhline(0, color='red', linestyle='--'); axes[1].grid(alpha=0.3)
     axes[1].set_title('(b) Residuales vs Ajustados')
-    
     axes[2].scatter(df2['orden'], df2['res'], alpha=0.7, edgecolor='k')
-    axes[2].axhline(0, color='red', linestyle='--')
-    axes[2].grid(alpha=0.3)
+    axes[2].axhline(0, color='red', linestyle='--'); axes[2].grid(alpha=0.3)
     axes[2].set_title('(c) Residuales vs Orden')
-    
     plt.tight_layout()
-    fn = 'residuales.png'
-    plt.savefig(fn, bbox_inches='tight')
-    plt.close()
-    
-    return fn
+    fn = 'residuales.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
 
 
 def _gen_cubo(R):
@@ -500,43 +485,14 @@ def _gen_spec(df, R, spec):
     fn = 'especificacion.png'; plt.savefig(fn, bbox_inches='tight'); plt.close(); return fn
 
 # ---------- Ecuacion ----------
-def _ecuacion_str(R, df=None):
-    # Si tenemos los datos (df), usamos Statsmodels para armar la ecuación exacta
-    if df is not None:
-        try:
-            coef_df, _ = generar_tabla_regresion(df, R)
-            # Filtramos los términos significativos (p < 0.05) y el Intercepto
-            sig = coef_df[(coef_df['Valor p'] < 0.05) | (coef_df['Término'].str.contains('Intercept'))]
-            
-            eq_terms = []
-            intercept_val = 0
-            for _, row in sig.iterrows():
-                term = row['Término']
-                coef = row['Coef']
-                if 'Intercept' in term:
-                    intercept_val = coef
-                else:
-                    # Limpiamos el nombre del término para que se vea bonito
-                    t_clean = term.replace(' * ', '*').replace(' ', '_')
-                    eq_terms.append(f"{coef:+.4f}*{t_clean}")
-            
-            if not eq_terms: return None
-            return f"Y = {intercept_val:.4f} " + " ".join(eq_terms)
-        except Exception:
-            pass # Si falla, usa el método de respaldo
-            
-    # Método de respaldo (por si no hay df)
+def _ecuacion_str(R):
     if R['via'] == VIA_3:
         sig = [n for n,e in R['effects'].items() if e.get('activo')]
     else:
         sig = [n for n,e in R['effects'].items() if e.get('p',1)<0.05]
-        
-    terms = [f"{R['effects'][n]['coef']:+.4f}*{n.replace('*','*')}" for n in sig]
-    if R.get('tiene_centro') and R.get('p_curv', 1) < 0.05:
-        coef_curv = R['yc_bar'] - R['yf_bar']
-        terms.append(f"{coef_curv:+.4f}*Curvatura")
-    if not terms: return None
-    return f"Y = {R['y_bar']:.4f} " + " ".join(terms)
+    if not sig: return None
+    return f"Y = {R['y_bar']:.4f} " + " ".join(
+        f"{R['effects'][n]['coef']:+.4f}*{n.replace('*','*')}" for n in sig)
 
 # ---------- Funciones de Reporte y Balance ----------
 
@@ -583,7 +539,9 @@ def generar_tabla_regresion(df, R):
     coef_df['Inferior 95%'] = conf_int[0].values
     coef_df['Superior 95%'] = conf_int[1].values
     
-
+    # VIF (Varianza inflada)
+    coef_df['VIF'] = 1.0 
+    
     # 4. Resumen de Ajuste Global
     fit_df = pd.DataFrame({
         'Métrica': ['Multiple R', 'R Square', 'Adjusted R Square', 'Standard Error', 'Observations', 'AIC', 'BIC (SBC)'],

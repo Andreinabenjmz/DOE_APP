@@ -459,18 +459,39 @@ elif st.session_state.stage == 'refine':
         st.write(f"**R2 = {R_red['R2']:.4f}**" + (f" | **R2 ajustado = {R_red['R2_adj']:.4f}**" if R_red.get('R2_adj') else ""))
         
         # --- INICIO EXTRA OPCIONAL: Intervalos de Confianza ---
-        with st.expander("🔬 Coeficientes e intervalos de confianza (Opcional)"):
-            if R_red['via'] in (ce.VIA_1, ce.VIA_2):
-                # Reutilizamos la función de statsmodels que ya calcula todo bien
-                coef_df, fit_df = ce.generar_tabla_regresion(df, R_red)
-                st.dataframe(coef_df.round(4), use_container_width=True)
-            else:
-                st.info(
-                    "En la Vía 3 se utiliza el método de Lenth. "
-                    "No se presentan intervalos de confianza convencionales "
-                    "porque este diseño no cuenta con réplicas puras para "
-                    "estimar un error residual independiente."
-                )
+        with st.expander("🔬 Opcional (Nivel Avanzado): Coeficientes con Intervalos de Confianza"):
+            st.markdown("""
+            Esta tabla muestra el error estándar y el rango donde probablemente se encuentra el verdadero coeficiente.
+            **Si el intervalo NO incluye el cero**, el término es estadísticamente significativo.
+            """)
+            t_crit = R_red.get('t_crit', 2.0)
+            mse = R_red.get('MS_resid', 0)
+            N_total = R_red.get('N', 1)
+            err_est = np.sqrt(mse / N_total) if mse > 0 else 0
+            
+            coef_data = [{
+                'Término': 'Intercepto (β0)', 
+                'Coef': round(R_red['y_bar'], 4), 
+                'Error Est.': round(err_est, 4), 
+                't': np.nan, 
+                'IC 95% Inf': np.nan, 
+                'IC 95% Sup': np.nan
+            }]
+            
+            for term, e in R_red['effects'].items():
+                t_val = e['coef'] / err_est if err_est > 0 else 0
+                ic_inf = e['coef'] - (t_crit * err_est)
+                ic_sup = e['coef'] + (t_crit * err_est)
+                coef_data.append({
+                    'Término': term.replace('*', ' x '),
+                    'Coef': round(e['coef'], 4),
+                    'Error Est.': round(err_est, 4),
+                    't': round(t_val, 2),
+                    'IC 95% Inf': round(ic_inf, 4),
+                    'IC 95% Sup': round(ic_sup, 4)
+                })
+            st.dataframe(pd.DataFrame(coef_data), use_container_width=True)
+        # --- FIN EXTRA OPCIONAL ---
 
         with st.expander("🤔 Preguntas de reflexion para tu informe"):
             st.markdown("""
@@ -507,11 +528,7 @@ elif st.session_state.stage == 'diagnostics':
 
     with st.expander("🔍 Auditoría Técnica: Fórmula Estadística del Modelo"):
         st.markdown("Esta es la fórmula exacta que la librería `Statsmodels` utiliza internamente para calcular los coeficientes y los residuales. Confirma que el modelo reducido incluye las interacciones seleccionadas.")
-    # Verificamos si la función existe antes de llamarla
-    if hasattr(ce, 'obtener_formula_modelo'):
         formula_audit = ce.obtener_formula_modelo(R)
-    else:
-        formula_audit = "Fórmula no disponible en esta versión"
         st.code(formula_audit, language="r")
         st.caption("Nota: Los dos puntos (:) indican interacciones (ej. A:B). 'Q(\"...\")' es la sintaxis de Statsmodels para nombres con caracteres especiales.")
 
@@ -664,7 +681,7 @@ elif st.session_state.stage == 'report':
 
     st.markdown("### 1. Ecuacion de Regresion")
     st.write(f"**Beta 0 (Media global / Intercepto)** = {R['y_bar']:.4f}")
-    eq = ce._ecuacion_str(R, df)
+    eq = ce._ecuacion_str(R)
     if eq: 
         st.code(eq, language=None)
     else: 
