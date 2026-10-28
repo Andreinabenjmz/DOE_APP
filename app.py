@@ -663,6 +663,7 @@ elif st.session_state.stage == 'report':
     df = st.session_state.df
     nombre = st.session_state.nombre
     slug = nombre.replace(' ', '_').replace('/', '-')
+    es_min = st.session_state.get('objetivo', 'max') == 'min'   
 
     st.markdown("### 1. Ecuacion de Regresion")
     st.write(f"**Beta 0 (Media global / Intercepto)** = {R['y_bar']:.4f}")
