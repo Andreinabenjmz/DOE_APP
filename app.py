@@ -798,6 +798,7 @@ elif st.session_state.stage == 'report':
             # Calcular el ranking para el Word
             cond_medias_word = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
             cond_medias_word.insert(0, 'Corrida', range(1, len(cond_medias_word)+1))
+            es_min = st.session_state.get('objetivo', 'max') == 'min'
             cond_medias_word = cond_medias_word.sort_values(by='Y', ascending=es_min).head(5).reset_index(drop=True)
             
             # Preparar la tabla para Word
