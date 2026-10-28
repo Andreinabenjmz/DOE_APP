@@ -317,7 +317,7 @@ def _gen_main_effects(R, spec):
 
 
 def _gen_interactions(R, custom_order=None):
-    es_fb = False
+    es_fb = True   # cuando via != VIA_3 y p >= 0.05
     sig = [n for n in R['effects'] if len(n.split('*'))==2]
     
     # NUEVO: Si el usuario definió un orden personalizado, lo usamos
