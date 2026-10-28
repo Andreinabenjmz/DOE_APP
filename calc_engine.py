@@ -1,4 +1,4 @@
-# calc_engine_plus.py
+# calc_engine.py
 # Motor de cálculo y gráficos — sin dependencias de Streamlit ni Colab
 
 import pandas as pd
