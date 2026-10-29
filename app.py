@@ -187,6 +187,7 @@ with st.sidebar:
                     cols = [mapping_nombres.get(c, c) for c in cols]
 
                 rp = raw.copy()
+                rp.insert(0, 'Corrida_ID', range(1, len(rp) + 1))
                 
                 # 2. Aplicar los niveles manuales del estudiante
                 for f in cols:
@@ -556,7 +557,14 @@ elif st.session_state.stage == 'diagnostics':
     """)
     
     # 1. Calcular medias por combinación
-    cond_medias = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
+    if 'Corrida_ID' in df.columns:
+        cond_medias = df[df['Curvatura']==0].groupby(st.session_state.factores, sort=False).agg(
+            Corrida=('Corrida_ID', 'first'),
+            Y=('Y', 'mean')
+        ).reset_index()
+    else:
+        cond_medias = df[df['Curvatura']==0].groupby(st.session_state.factores, sort=False)['Y'].mean().reset_index()
+        cond_medias.insert(0, 'Corrida', range(1, len(cond_medias)+1))
     
     # 2. Agregar el número de corrida (1 al N, en el orden original)
     cond_medias.insert(0, 'Corrida', range(1, len(cond_medias)+1))
@@ -809,8 +817,16 @@ elif st.session_state.stage == 'report':
             doc.add_heading("2.5. Condiciones Recomendadas (Ranking)", level=2)
             
             # Calcular el ranking para el Word
-            cond_medias_word = df[df['Curvatura']==0].groupby(st.session_state.factores)['Y'].mean().reset_index()
-            cond_medias_word.insert(0, 'Corrida', range(1, len(cond_medias_word)+1))
+            if 'Corrida_ID' in df.columns:
+                cond_medias_word = df[df['Curvatura']==0].groupby(st.session_state.factores, sort=False).agg(
+                    Corrida=('Corrida_ID', 'first'),
+                    Y=('Y', 'mean')
+                ).reset_index()
+            else:
+                cond_medias_word = df[df['Curvatura']==0].groupby(st.session_state.factores, sort=False)['Y'].mean().reset_index()
+                cond_medias_word.insert(0, 'Corrida', range(1, len(cond_medias_word)+1))
+            
+            es_min = st.session_state.get('objetivo', 'max') == 'min'
             cond_medias_word = cond_medias_word.sort_values(by='Y', ascending=es_min).head(5).reset_index(drop=True)
             
             # Preparar la tabla para Word
@@ -819,11 +835,12 @@ elif st.session_state.stage == 'report':
             
             # Reemplazar -1 y 1 por texto más amigable
             for f in st.session_state.factores:
-                tabla_word[f] = tabla_word[f].apply(lambda x: "Bajo (-1)" if x==-1 else ("Alto (+1)" if x==1 else "Centro (0)"))
+                tabla_word[f] = tabla_word[f].apply(lambda x: "-1" if x==-1 else "+1" if x==1 else "0"))
                 
             tabla_word = tabla_word.rename(columns={'Y': 'Media de Y'})
             
             _insertar_tabla_word(doc, tabla_word)
+
             doc.add_paragraph("Recomendación operativa: [Escribe aquí la combinación que sugieres y por qué]")
             # -----------------------------
 
