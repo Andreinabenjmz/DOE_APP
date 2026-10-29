@@ -835,7 +835,7 @@ elif st.session_state.stage == 'report':
             
             # Reemplazar -1 y 1 por texto más amigable
             for f in st.session_state.factores:
-                tabla_word[f] = tabla_word[f].apply(lambda x: "-1" if x==-1 else "+1" if x==1 else "0"))
+                tabla_word[f] = tabla_word[f].apply(lambda x: "-1" if x==-1 else "+1" if x==1 else "0")
                 
             tabla_word = tabla_word.rename(columns={'Y': 'Media de Y'})
             
