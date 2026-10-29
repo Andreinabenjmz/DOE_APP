@@ -555,7 +555,9 @@ elif st.session_state.stage == 'diagnostics':
     Estas son las combinaciones que dieron los mejores resultados en el experimento. 
     *(Ordenadas de mayor a menor según la media de Y)*
     """)
-    
+
+
+
     # 1. Calcular medias por combinación
     if 'Corrida_ID' in df.columns:
         cond_medias = df[df['Curvatura']==0].groupby(st.session_state.factores, sort=False).agg(
@@ -564,10 +566,16 @@ elif st.session_state.stage == 'diagnostics':
         ).reset_index()
     else:
         cond_medias = df[df['Curvatura']==0].groupby(st.session_state.factores, sort=False)['Y'].mean().reset_index()
-        cond_medias.insert(0, 'Corrida', range(1, len(cond_medias)+1))
-    
+        if 'Corrida' not in cond_medias.columns:
+            cond_medias.insert(0, 'Corrida', range(1, len(cond_medias)+1))
+
+    # NUEVO: Calcular la predicción del modelo y la diferencia
+    cond_medias['Y_Predicho'] = cond_medias.apply(
+        lambda row: ce.predecir_y_combinacion(row.to_dict(), R), axis=1
+    )
+    cond_medias['Diferencia'] = cond_medias['Y'] - cond_medias['Y_Predicho']
+
     # 3. Ordenar y sacar el Top 5
-    # Ordenar según el objetivo (max = descendente, min = ascendente)
     es_min = st.session_state.get('objetivo', 'max') == 'min'
     cond_medias = cond_medias.sort_values(by='Y', ascending=es_min).head(5).reset_index(drop=True)
     
@@ -580,10 +588,13 @@ elif st.session_state.stage == 'diagnostics':
             if val == -1: fila[f] = "Nivel Bajo (-1)"
             elif val == 1: fila[f] = "Nivel Alto (+1)"
             else: fila[f] = "Centro (0)"
-        fila['Media de Y'] = round(row['Y'], 4)
+        fila['Media Real (Y)'] = round(row['Y'], 4)
+        fila['Predicción (Ecuación)'] = round(row['Y_Predicho'], 4)
+        fila['Diferencia (Residuo)'] = round(row['Diferencia'], 4)
         ranking_data.append(fila)
     
     st.dataframe(pd.DataFrame(ranking_data), use_container_width=True)
+    st.caption("💡 **Media Real:** Promedio de las réplicas en el laboratorio. **Predicción:** Valor calculado con la ecuación de regresión. **Diferencia:** Si es pequeña, el modelo predice con precisión.")
 
     with st.expander("🤔 Preguntas de reflexión (toma notas para tu informe)"):
         st.markdown("""
@@ -812,7 +823,9 @@ elif st.session_state.stage == 'report':
 
             # --- NUEVO: Ranking Top 5 ---
             doc.add_heading("2.5. Condiciones Recomendadas (Ranking)", level=2)
-            
+
+
+
             # Calcular el ranking para el Word
             if 'Corrida_ID' in df.columns:
                 cond_medias_word = df[df['Curvatura']==0].groupby(st.session_state.factores, sort=False).agg(
@@ -821,10 +834,18 @@ elif st.session_state.stage == 'report':
                 ).reset_index()
             else:
                 cond_medias_word = df[df['Curvatura']==0].groupby(st.session_state.factores, sort=False)['Y'].mean().reset_index()
-                cond_medias_word.insert(0, 'Corrida', range(1, len(cond_medias_word)+1))
+                if 'Corrida' not in cond_medias_word.columns:
+                    cond_medias_word.insert(0, 'Corrida', range(1, len(cond_medias_word)+1))
+            
+            # NUEVO: Calcular predicción para el Word
+            cond_medias_word['Y_Predicho'] = cond_medias_word.apply(
+                lambda row: ce.predecir_y_combinacion(row.to_dict(), R), axis=1
+            )
+            cond_medias_word['Diferencia'] = cond_medias_word['Y'] - cond_medias_word['Y_Predicho']
             
             es_min = st.session_state.get('objetivo', 'max') == 'min'
             cond_medias_word = cond_medias_word.sort_values(by='Y', ascending=es_min).head(5).reset_index(drop=True)
+
             
             # Preparar la tabla para Word
             tabla_word = cond_medias_word.copy()
@@ -834,9 +855,15 @@ elif st.session_state.stage == 'report':
             for f in st.session_state.factores:
                 tabla_word[f] = tabla_word[f].apply(lambda x: "-1" if x==-1 else "+1" if x==1 else "0")
                 
-            tabla_word = tabla_word.rename(columns={'Y': 'Media de Y'})
+            # Renombrar columnas
+            tabla_word = tabla_word.rename(columns={
+                'Y': 'Media Real', 
+                'Y_Predicho': 'Predicción',
+                'Diferencia': 'Diferencia'
+            })
             
             _insertar_tabla_word(doc, tabla_word)
+
 
             doc.add_paragraph("Recomendación operativa: [Escribe aquí la combinación que sugieres y por qué]")
             # -----------------------------

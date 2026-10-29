@@ -697,4 +697,17 @@ def obtener_formulas_utilizadas(R):
     return formulas
 
 
-
+def predecir_y_combinacion(niveles, R):
+    """Calcula el Y predicho para una combinación usando los coeficientes del modelo."""
+    y_pred = R['y_bar']  # Partimos de la media general
+    terms = R.get('terms_included', list(R['effects'].keys()))
+    
+    for term in terms:
+        if term not in R['effects']: continue
+        coef = R['effects'][term]['coef']
+        val = 1
+        for f in term.split('*'):
+            val *= niveles[f]  # Multiplica los niveles (-1 o +1)
+        y_pred += coef * val  # Suma el efecto del término
+        
+    return y_pred
