@@ -566,9 +566,6 @@ elif st.session_state.stage == 'diagnostics':
         cond_medias = df[df['Curvatura']==0].groupby(st.session_state.factores, sort=False)['Y'].mean().reset_index()
         cond_medias.insert(0, 'Corrida', range(1, len(cond_medias)+1))
     
-    # 2. Agregar el número de corrida (1 al N, en el orden original)
-    cond_medias.insert(0, 'Corrida', range(1, len(cond_medias)+1))
-    
     # 3. Ordenar y sacar el Top 5
     # Ordenar según el objetivo (max = descendente, min = ascendente)
     es_min = st.session_state.get('objetivo', 'max') == 'min'
