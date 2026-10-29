@@ -43,13 +43,19 @@ def calcular_lenth(effects, df_resid=None):
     SME = stats.t.ppf(gamma, df_t) * PSE
     return {'m': m, 'PSE': PSE, 'ME': ME, 'SME': SME, 'df_t': df_t}
 
-# ---------- Preparacion ----------
+# ---------- Preparacion ---------------------
 def preparar_datos(raw, factores, respuestas):
     tmp = raw.copy()
     cg = '__G__'; cy = '__Y__'
     while cg in tmp.columns: cg += '_'
     while cy in tmp.columns: cy += '_'
-    df = pd.melt(tmp, id_vars=factores, value_vars=respuestas,
+    
+    # NUEVO: Incluir Corrida_ID si existe
+    id_vars = factores.copy()
+    if 'Corrida_ID' in tmp.columns:
+        id_vars.append('Corrida_ID')
+        
+    df = pd.melt(tmp, id_vars=id_vars, value_vars=respuestas,
                  var_name=cg, value_name=cy).rename(columns={cg:'Grupo', cy:'Y'})
     df['Curvatura'] = df[factores].apply(
         lambda r: 1 if all(v==0 for v in r) else 0, axis=1)
