@@ -684,7 +684,15 @@ elif st.session_state.stage == 'report':
     slug = nombre.replace(' ', '_').replace('/', '-')
 
     st.markdown("### 1. Ecuacion de Regresion")
-    st.write(f"**Beta 0 (Media global / Intercepto)** = {R['y_bar']:.4f}")
+        # --- INICIO DEL CAMBIO ---
+    if R['via'] == ce.VIA_2:
+        st.write(f"**Media global del experimento** = {R['y_bar']:.4f}")
+        st.write(f"**Intercepto base de la ecuación (Bloque 1)** = {R.get('intercepto_bloques', R['y_bar']):.4f}")
+        st.caption("Nota: La ecuación incluye los coeficientes de los Bloques 2 al 5. El intercepto base representa al Bloque 1.")
+    else:
+        st.write(f"**Beta 0 (Media global / Intercepto)** = {R['y_bar']:.4f}")
+    # --- FIN DEL CAMBIO ---
+
     eq = ce._ecuacion_str(R)
     if eq: 
         st.code(eq, language=None)
@@ -890,7 +898,12 @@ elif st.session_state.stage == 'report':
             doc.add_paragraph("Interpretación: [Analiza los 3 supuestos: normalidad, homocedasticidad e independencia]")
             
             doc.add_heading("2.9. Ecuación de regresión", level=2)
-            doc.add_paragraph(f"Beta 0 = {R['y_bar']:.4f}")
+            if R['via'] == ce.VIA_2:
+                doc.add_paragraph(f"Media global del experimento = {R['y_bar']:.4f}")
+                doc.add_paragraph(f"Intercepto base de la ecuación (Bloque 1) = {R.get('intercepto_bloques', R['y_bar']):.4f}")
+            else:
+                doc.add_paragraph(f"Beta 0 = {R['y_bar']:.4f}")
+                
             if eq: doc.add_paragraph(eq, style='Intense Quote')
             doc.add_paragraph("Interpretación de los coeficientes: [Explica qué significa cada término en la ecuación]")
        
