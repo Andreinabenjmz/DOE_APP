@@ -481,7 +481,7 @@ elif st.session_state.stage == 'refine':
         
         st.write(f"**R2 = {R_red['R2']:.4f}**" + (f" | **R2 ajustado = {R_red['R2_adj']:.4f}**" if R_red.get('R2_adj') else ""))
         
-            with st.expander("🔬 Coeficientes e intervalos de confianza (Opcional)"):
+        with st.expander("🔬 Coeficientes e intervalos de confianza (Opcional)"):
             if R_red['via'] in (ce.VIA_1, ce.VIA_2):
                 # Usar Statsmodels para las Vías con réplicas/bloques
                 coef_df, _ = ce.generar_tabla_regresion(df, R_red)
