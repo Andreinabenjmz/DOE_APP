@@ -314,6 +314,17 @@ elif st.session_state.stage == 'full_model':
     """)
     
     st.dataframe(R['anova'].round(4), use_container_width=True)
+    st.markdown("### 2. Coeficientes del Modelo")
+    try:
+        coef_df, fit_df = ce.generar_tabla_regresion(df, R)
+        # En Vía 3, ocultamos el Error Est. y el Valor p porque son NaN
+        if via == ce.VIA_3:
+            st.dataframe(coef_df[['Término', 'Coef']].round(4), use_container_width=True)
+            st.info("💡 En la Vía 3, el modelo está saturado (sin grados de libertad de error). Por ello, solo se muestran los coeficientes estimados; los errores estándar y los valores p no están definidos.")
+        else:
+            st.dataframe(coef_df.round(4), use_container_width=True)
+    except Exception as e:
+        st.warning(f"No se pudieron mostrar los coeficientes: {e}")
     
     st.write(f"**R2 = {R['R2']:.4f}**" + (f" | **R2 ajustado = {R['R2_adj']:.4f}**" if R.get('R2_adj') else ""))
     st.caption("💡 **El R2** (de 0 a 1) indica qué porcentaje de la variabilidad total del proceso está explicada por el modelo. Un R2 mayor a 0.80 suele ser muy bueno.")
@@ -470,40 +481,16 @@ elif st.session_state.stage == 'refine':
         
         st.write(f"**R2 = {R_red['R2']:.4f}**" + (f" | **R2 ajustado = {R_red['R2_adj']:.4f}**" if R_red.get('R2_adj') else ""))
         
-        # --- INICIO EXTRA OPCIONAL: Intervalos de Confianza ---
-        with st.expander("🔬 Opcional (Nivel Avanzado): Coeficientes con Intervalos de Confianza"):
-            st.markdown("""
-            Esta tabla muestra el error estándar y el rango donde probablemente se encuentra el verdadero coeficiente.
-            **Si el intervalo NO incluye el cero**, el término es estadísticamente significativo.
-            """)
-            t_crit = R_red.get('t_crit', 2.0)
-            mse = R_red.get('MS_resid', 0)
-            N_total = R_red.get('N', 1)
-            err_est = np.sqrt(mse / N_total) if mse > 0 else 0
-            
-            coef_data = [{
-                'Término': 'Intercepto (β0)', 
-                'Coef': round(R_red['y_bar'], 4), 
-                'Error Est.': round(err_est, 4), 
-                't': np.nan, 
-                'IC 95% Inf': np.nan, 
-                'IC 95% Sup': np.nan
-            }]
-            
-            for term, e in R_red['effects'].items():
-                t_val = e['coef'] / err_est if err_est > 0 else 0
-                ic_inf = e['coef'] - (t_crit * err_est)
-                ic_sup = e['coef'] + (t_crit * err_est)
-                coef_data.append({
-                    'Término': term.replace('*', ' x '),
-                    'Coef': round(e['coef'], 4),
-                    'Error Est.': round(err_est, 4),
-                    't': round(t_val, 2),
-                    'IC 95% Inf': round(ic_inf, 4),
-                    'IC 95% Sup': round(ic_sup, 4)
-                })
-            st.dataframe(pd.DataFrame(coef_data), use_container_width=True)
-        # --- FIN EXTRA OPCIONAL ---
+            with st.expander("🔬 Coeficientes e intervalos de confianza (Opcional)"):
+            if R_red['via'] in (ce.VIA_1, ce.VIA_2):
+                # Usar Statsmodels para las Vías con réplicas/bloques
+                coef_df, _ = ce.generar_tabla_regresion(df, R_red)
+                st.dataframe(coef_df.round(4), use_container_width=True)
+            else:
+                # Usar solo los coeficientes para la Vía 3 (saturada)
+                coef_df, _ = ce.generar_tabla_regresion(df, R_red)
+                st.dataframe(coef_df[['Término', 'Coef']].round(4), use_container_width=True)
+                st.info("💡 En la Vía 3 (método de Lenth), el modelo está saturado y no tiene grados de libertad de error. Por ello, no es posible calcular intervalos de confianza convencionales; solo se muestran los coeficientes estimados.")
 
         with st.expander("🤔 Preguntas de reflexion para tu informe"):
             st.markdown("""
