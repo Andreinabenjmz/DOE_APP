@@ -333,6 +333,17 @@ elif st.session_state.stage == 'full_model':
         if fn_curv: c2.image(fn_curv, caption="Gráfico de Curvatura", use_container_width=True)
 
     st.markdown("### 3. Diagrama de Pareto")
+    # --- NUEVO: Mostrar métricas de error según la vía ---
+    if via == ce.VIA_3:
+        if R.get('lenth', {}).get('valido'):
+            c1, c2 = st.columns(2)
+            c1.metric("Pseudo Error Estándar (PSE)", f"{R['lenth']['PSE']:.4f}")
+            c2.metric("Margen de Error (ME)", f"{R['lenth']['ME']:.4f}")
+            t_critico = R['lenth']['ME'] / R['lenth']['PSE']
+            st.info(f"💡 **Umbral |t| (Método de Lenth):** Se calcula dividiendo el ME entre el PSE ({R['lenth']['ME']:.4f} / {R['lenth']['PSE']:.4f} ≈ **{t_critico:.2f}**). Las barras que superan este valor son significativas.")
+    else:
+        st.info(f"💡 **Umbral |t| (Error Puro):** Se calcula usando los {R['df_resid']} grados de libertad del error. El valor crítico es **{R['t_crit']:.2f}**. Las barras que superan este valor son significativas.")
+    # -----------------------------------------------------------
     st.image(ce._gen_pareto(R), use_container_width=True)
 
     st.markdown("### 4. Grafico semi-normal (Daniel / Lenth)")
