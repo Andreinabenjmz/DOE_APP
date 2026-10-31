@@ -482,6 +482,9 @@ elif st.session_state.stage == 'refine':
         st.write(f"**R2 = {R_red['R2']:.4f}**" + (f" | **R2 ajustado = {R_red['R2_adj']:.4f}**" if R_red.get('R2_adj') else ""))
         
         with st.expander("🔬 Coeficientes e intervalos de confianza (Opcional)"):
+            st.markdown("""
+            💡 **Nota metodológica:** Los coeficientes de la ecuación se calculan ajustando un modelo de **Regresión Lineal Múltiple** mediante el método de **Mínimos Cuadrados Ordinarios (OLS)**, utilizando la librería estándar de Python **Statsmodels**. Este método minimiza la suma de los errores al cuadrado entre los valores observados y los predichos.
+            """)
             if R_red['via'] in (ce.VIA_1, ce.VIA_2):
                 # Usar Statsmodels para las Vías con réplicas/bloques
                 coef_df, _ = ce.generar_tabla_regresion(df, R_red)
