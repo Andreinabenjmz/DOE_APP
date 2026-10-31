@@ -31,17 +31,50 @@ VIA_INFO = {
 def calcular_lenth(effects, df_resid=None):
     vals = np.array([e['efecto'] for e in effects.values()])
     abs_eff = np.abs(vals); m = len(abs_eff)
+    
     if m == 0:
-        return {'m': 0, 'PSE': 0, 'ME': 0, 'SME': 0, 'df_t': m}
+        return {
+            'm': 0, 'PSE': np.nan, 'ME': np.nan, 'SME': np.nan, 'df_t': 0,
+            'valido': False, 'mensaje': 'No se encontraron efectos para analizar.'
+        }
+        
     s0 = 1.5 * np.median(abs_eff)
     sub = abs_eff[abs_eff < 2.5 * s0]
     s1 = 1.5 * np.median(sub) if len(sub) > 0 else s0
-    PSE = max(s1, 1e-9)
+    
+    if s1 <= 0:
+        PSE = np.nan
+    else:
+        PSE = s1
+        
     df_t = df_resid if (df_resid is not None and df_resid >= 1) else m
+    
+    # Verificación de seguridad
+    if not np.isfinite(PSE) or PSE <= 0:
+        return {
+            'm': m,
+            'PSE': np.nan,
+            'ME': np.nan,
+            'SME': np.nan,
+            'df_t': m / 3,
+            'valido': False,
+            'mensaje': 'No se pudo estimar un PSE positivo.'
+        }
+        
     ME = stats.t.ppf(0.975, df_t) * PSE
     gamma = 0.5 * (1 + 0.95**(1.0/m))
     SME = stats.t.ppf(gamma, df_t) * PSE
-    return {'m': m, 'PSE': PSE, 'ME': ME, 'SME': SME, 'df_t': df_t}
+
+    return {
+        'm': m,
+        'PSE': PSE,
+        'ME': ME,
+        'SME': SME,
+        'df_t': df_t,
+        'valido': True,
+        'mensaje': 'Cálculo exitoso.'
+    }
+
 
 # ---------- Preparacion ---------------------
 def preparar_datos(raw, factores, respuestas):
@@ -218,6 +251,13 @@ def calcular_via3(df, factores):
     SS_t = (df['Y']**2).sum() - G**2/N
     ef = _calc_effects(df, factores, Nf=N)
     L = calcular_lenth(ef, df_resid=0)
+    if not L['valido']:
+        raise ValueError(
+            "No se puede determinar qué efectos están activos. "
+            + L['mensaje']
+        )
+
+    for n_, e in ef.items(): e['activo'] = abs(e['efecto']) > L['ME']
     for n_, e in ef.items(): e['activo'] = abs(e['efecto']) > L['ME']
     act = [n_ for n_, e in ef.items() if e['activo']]
     ina = [n_ for n_, e in ef.items() if not e['activo']]
