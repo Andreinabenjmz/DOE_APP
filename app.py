@@ -658,7 +658,12 @@ elif st.session_state.stage == 'diagnostics':
     # --- NUEVO: Auditoría de Fórmulas ---
     with st.expander("📐 Auditoría Técnica: Fórmulas Estadísticas Utilizadas"):
         st.markdown("""
-        Esta aplicación se apoya en las librerías **Statsmodels** y **SciPy**. A continuación, se detallan las fórmulas matemáticas que el programa utiliza internamente para calcular los resultados presentados:
+        Esta aplicación se apoya en las librerías estándar de Python **Statsmodels** y **SciPy** para calcular los resultados presentados. El programa utiliza dos enfoques estadísticos según el diseño experimental:
+        
+        1. **Mínimos Cuadrados Ordinarios (OLS):** Utilizado para ajustar la regresión lineal y el ANOVA (Vías 1 y 2) a través de **Statsmodels**, minimizando la suma de los errores al cuadrado.
+        2. **Método de Lenth:** Utilizado en diseños sin réplicas (Vía 3) para estimar un Pseudo Error Estándar (PSE) a partir de la mediana de los efectos, usando **SciPy** para las distribuciones probabilísticas.
+        
+        A continuación, se detallan las fórmulas matemáticas que el programa utiliza internamente para calcular los resultados:
         """)
         
         formulas = ce.obtener_formulas_utilizadas(R)
